@@ -1,5 +1,14 @@
 FROM python:3.11-slim
 
+# 可选 apt 镜像: 国内构建传 --build-arg APT_MIRROR=mirrors.tencentyun.com 加速 (默认走官方源)
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g; s|security.debian.org|$APT_MIRROR|g" \
+            /etc/apt/sources.list 2>/dev/null || true; \
+    fi
+
 # MediaPipe / OpenCV / 视频解码所需的系统库
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg libglib2.0-0 libgl1 \

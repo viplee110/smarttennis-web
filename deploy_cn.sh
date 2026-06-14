@@ -8,8 +8,9 @@ echo '{"registry-mirrors":["https://mirror.ccs.tencentyun.com","https://docker.m
   | sudo tee /etc/docker/daemon.json >/dev/null
 sudo systemctl restart docker
 
-echo "==> 2/3 构建镜像 (pip 走清华源, 约 3-6 分钟)"
+echo "==> 2/3 构建镜像 (apt 走腾讯云内网源, pip 走清华源, 约 3-6 分钟)"
 sudo docker build \
+  --build-arg APT_MIRROR=mirrors.tencentyun.com \
   --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
   -t smarttennis .
 
