@@ -7,6 +7,7 @@ shadow.py — 服务端渲染动力链图 + 影子骨架叠加, 返回 base64 PN
 from __future__ import annotations
 import base64, io
 import numpy as np
+import cv2
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -97,6 +98,34 @@ def _draw_skeleton(ax, pts, color, alpha=1.0, lw=2.2):
         ax.plot([pts[a, 0], pts[b, 0]], [pts[a, 1], pts[b, 1]],
                 color=color, lw=lw, alpha=alpha, solid_capstyle="round")
     ax.scatter(pts[:, 0], pts[:, 1], s=10, color=color, alpha=alpha, zorder=3)
+
+
+def draw_skeleton_on_frame(frame_bgr: np.ndarray, pose_img, max_w: int = 900) -> str:
+    """把 2D 骨架画在真实视频帧上, 返回 base64 JPEG (直观显示击球瞬间)。
+    pose_img: 33×(x,y,...) 归一化坐标 [0,1]。"""
+    h, w = frame_bgr.shape[:2]
+    p = np.array(pose_img, dtype=float)[:, :2] * [w, h]
+    lw = max(2, w // 350)
+    r = max(3, w // 240)
+    for a, b in CONNECTIONS:
+        pa, pb = p[a].astype(int), p[b].astype(int)
+        cv2.line(frame_bgr, (int(pa[0]), int(pa[1])), (int(pb[0]), int(pb[1])),
+                 (0, 215, 255), lw, cv2.LINE_AA)
+    for x, y in p.astype(int):
+        cv2.circle(frame_bgr, (int(x), int(y)), r, (0, 120, 255), -1, cv2.LINE_AA)
+    if w > max_w:
+        frame_bgr = cv2.resize(frame_bgr, (max_w, int(h * max_w / w)))
+    ok, buf = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+
+
+def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
+    """读取视频指定帧 (BGR)。"""
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
+    ok, frame = cap.read()
+    cap.release()
+    return frame if ok else None
 
 
 def render_shadow_overlay(user_pose_img, ref_pose_img,

@@ -33,6 +33,15 @@
   input[type=file]{display:none}
   .hint{font-size:12.5px;color:var(--muted);margin-top:12px}
   #fileName{font-size:13px;color:var(--green);margin-top:10px;word-break:break-all}
+  .handlabel{font-size:12.5px;color:var(--muted);margin:2px 0 6px}
+  .handsel{display:flex;gap:8px;justify-content:center;margin-bottom:6px}
+  .handsel button{flex:1;max-width:130px;border:1px solid var(--line);background:#fff;color:var(--muted);
+       border-radius:10px;padding:9px;font-size:14px;font-weight:600;cursor:pointer}
+  .handsel button.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .frames{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .frames figure{margin:0}
+  .frames img{width:100%;border-radius:10px;display:block;background:#000;min-height:60px}
+  .frames figcaption{font-size:12.5px;color:var(--muted);text-align:center;margin-top:5px;font-weight:600}
   .spinner{display:none;text-align:center;padding:30px 0}
   .spinner.on{display:block}
   .ring{width:42px;height:42px;border:4px solid #dfe7e3;border-top-color:var(--green);
@@ -75,6 +84,12 @@
       <div class="step"><b>2</b>击球居中</div>
       <div class="step"><b>3</b>全身入镜</div>
     </div>
+    <div class="handlabel">你的持拍手</div>
+    <div class="handsel" id="handsel">
+      <button data-h="auto" class="on">自动</button>
+      <button data-h="R">右手</button>
+      <button data-h="L">左手</button>
+    </div>
     <input type="file" id="camInput" accept="video/*" capture="environment">
     <input type="file" id="fileInput" accept="video/*">
     <button class="btn" id="camBtn">📹 现场拍摄</button>
@@ -95,6 +110,14 @@
       <div class="scorebar">
         <div class="scorenum" id="score">0<small>/100</small></div>
         <div class="summary" id="summary"></div>
+      </div>
+    </div>
+    <div class="card imgcard" id="contactCard">
+      <h3>击球瞬间</h3>
+      <div class="sub">你与德约的击球定格，黄线为识别到的骨架。</div>
+      <div class="frames">
+        <figure><img id="userContactImg" alt="你的击球瞬间"><figcaption>你</figcaption></figure>
+        <figure><img id="djokoContactImg" alt="德约击球瞬间"><figcaption>德约</figcaption></figure>
       </div>
     </div>
     <div class="card imgcard">
@@ -126,6 +149,11 @@ const camInput=$("#camInput"), fileInput=$("#fileInput"),
       uploadCard=$("#uploadCard"), err=$("#err");
 let chosen=null;
 
+let handChoice="auto";
+document.querySelectorAll("#handsel button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#handsel button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");handChoice=b.dataset.h;
+});
 camBtn.onclick=()=>camInput.click();
 pickBtn.onclick=()=>fileInput.click();
 function onPick(input){
@@ -143,7 +171,7 @@ analyzeBtn.onclick=async()=>{
   if(!chosen)return;
   err.style.display="none";uploadCard.style.display="none";spinner.classList.add("on");
   try{
-    const fd=new FormData();fd.append("video",chosen);
+    const fd=new FormData();fd.append("video",chosen);fd.append("hand",handChoice);
     const r=await fetch("/api/analyze",{method:"POST",body:fd});
     const data=await r.json();
     if(!r.ok||!data.ok)throw new Error(data.detail||"分析失败，请重试");
@@ -158,6 +186,10 @@ function render(d){
   spinner.classList.remove("on");
   $("#score").innerHTML=d.report.score+'<small>/100</small>';
   $("#summary").textContent=d.report.summary;
+  if(d.user_contact){$("#userContactImg").src=d.user_contact;
+    $("#djokoContactImg").src=d.djokovic_contact||"/assets/djokovic_contact.jpg";
+    $("#contactCard").style.display="";}
+  else $("#contactCard").style.display="none";
   $("#chartImg").src=d.kinetic_chart;
   if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
   else $("#overlayCard").style.display="none";

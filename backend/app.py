@@ -11,7 +11,7 @@ GET  /api/health  健康检查
 from __future__ import annotations
 import json, os, tempfile
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -37,49 +37,60 @@ def health():
 
 
 @app.post("/api/analyze")
-async def analyze(video: UploadFile = File(...)):
+async def analyze(video: UploadFile = File(...), hand: str = Form("auto")):
     data = await video.read()
     if not data:
         raise HTTPException(400, "空文件")
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"文件过大 (上限 {MAX_UPLOAD // 1024 // 1024}MB)")
+    hand = hand if hand in ("L", "R") else "auto"   # 用户指定惯用手, 否则自动判定
 
     suffix = os.path.splitext(video.filename or "")[1] or ".mp4"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(data); tmp.close()
     try:
-        tmp.write(data); tmp.close()
-        landmarks = pose.extract_from_video(tmp.name)
-    except RuntimeError as e:
-        raise HTTPException(422, str(e))
+        try:
+            landmarks = pose.extract_from_video(tmp.name)
+        except RuntimeError as e:
+            raise HTTPException(422, str(e))
+
+        res = kc.analyze(landmarks, hand=hand)
+        report = diagnose.diagnose(res["metrics"], REFERENCE)
+        ref = REFERENCE["reference"]
+        chart = shadow.render_kinetic_chart(
+            res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"))
+
+        contact_idx = res["contact"]
+        contact_pose = landmarks["frames"][contact_idx].get("img")
+
+        # 用户击球瞬间真实帧 + 骨架
+        user_contact = None
+        frame = shadow.grab_frame(tmp.name, contact_idx)
+        if frame is not None and contact_pose:
+            user_contact = shadow.draw_skeleton_on_frame(frame, contact_pose)
+
+        overlay = None
+        if contact_pose and ref.get("contact_pose_img"):
+            overlay = shadow.render_shadow_overlay(
+                contact_pose, ref["contact_pose_img"],
+                user_hand=res["signals"]["hand"], ref_hand=ref.get("hand", "R"))
+
+        return JSONResponse({
+            "ok": True,
+            "hand": res["signals"]["hand"],
+            "valid_ratio": round(res["valid_ratio"], 3),
+            "metrics": {k: round(float(v), 3) for k, v in res["metrics"].items()},
+            "report": report,
+            "kinetic_chart": chart,
+            "shadow_overlay": overlay,
+            "user_contact": user_contact,
+            "djokovic_contact": "/assets/djokovic_contact.jpg",
+        })
     finally:
         try:
             os.unlink(tmp.name)
         except OSError:
             pass
-
-    res = kc.analyze(landmarks)
-    report = diagnose.diagnose(res["metrics"], REFERENCE)
-
-    ref = REFERENCE["reference"]
-    chart = shadow.render_kinetic_chart(
-        res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"))
-
-    contact_pose = landmarks["frames"][res["contact"]].get("img")
-    overlay = None
-    if contact_pose and ref.get("contact_pose_img"):
-        overlay = shadow.render_shadow_overlay(
-            contact_pose, ref["contact_pose_img"],
-            user_hand=res["signals"]["hand"], ref_hand=ref.get("hand", "R"))
-
-    return JSONResponse({
-        "ok": True,
-        "hand": res["signals"]["hand"],
-        "valid_ratio": round(res["valid_ratio"], 3),
-        "metrics": {k: round(float(v), 3) for k, v in res["metrics"].items()},
-        "report": report,
-        "kinetic_chart": chart,
-        "shadow_overlay": overlay,
-    })
 
 
 # 前端静态资源 (放最后, 不覆盖 /api/*)

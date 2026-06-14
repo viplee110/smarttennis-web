@@ -117,7 +117,8 @@ def compute_signals(world: np.ndarray, fps: float, hand: str = "auto") -> dict:
 
     # X-factor: 肩-髋 在水平面内的原始分离角 (deg)。中立站姿两线近似平行→≈0,
     # 装载期肩转多于髋→分离增大。不减任意基线, 避免片段首帧站姿差异引入噪声。
-    xfactor = np.degrees(sho_ang - hip_ang)
+    # 按惯用手规整符号: 左手正手是右手的镜像, 取负后与右手(德约)同一约定下可比。
+    xfactor = np.degrees(sho_ang - hip_ang) * (1.0 if hand == "R" else -1.0)
 
     sig = {
         "hip": _smooth(hip_av), "shoulder": _smooth(sho_av),
