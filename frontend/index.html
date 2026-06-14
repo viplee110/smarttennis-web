@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b6b3a">
+<title>SmartTennis · 正手动力链分析</title>
+<style>
+  :root{
+    --green:#0b6b3a; --green-l:#13935a; --bg:#f5f7f6; --card:#fff;
+    --ink:#1c2620; --muted:#6b7770; --ok:#1f9d55; --warn:#e8833a; --line:#e3e8e5;
+    --shadow:0 2px 14px rgba(0,0,0,.07);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.55}
+  header{background:linear-gradient(135deg,var(--green),var(--green-l));color:#fff;
+         padding:22px 18px calc(22px + env(safe-area-inset-top));text-align:center}
+  header h1{margin:0;font-size:21px;font-weight:700;letter-spacing:.5px}
+  header p{margin:6px 0 0;font-size:13px;opacity:.9}
+  .wrap{max-width:680px;margin:0 auto;padding:16px 14px 60px}
+  .card{background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:18px;margin-bottom:16px}
+  .upload{text-align:center}
+  .steps{display:flex;justify-content:center;gap:14px;margin:4px 0 16px;flex-wrap:wrap}
+  .step{font-size:12px;color:var(--muted)}
+  .step b{display:block;color:var(--green);font-size:18px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;
+       border:none;border-radius:12px;padding:15px;font-size:16px;font-weight:600;cursor:pointer;
+       background:var(--green);color:#fff;transition:.15s;margin-top:8px}
+  .btn:active{transform:scale(.98)}
+  .btn.secondary{background:#eef2f0;color:var(--green)}
+  .btn:disabled{opacity:.5}
+  input[type=file]{display:none}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:12px}
+  #fileName{font-size:13px;color:var(--green);margin-top:10px;word-break:break-all}
+  .spinner{display:none;text-align:center;padding:30px 0}
+  .spinner.on{display:block}
+  .ring{width:42px;height:42px;border:4px solid #dfe7e3;border-top-color:var(--green);
+        border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #result{display:none}
+  .scorebar{display:flex;align-items:center;gap:16px}
+  .scorenum{font-size:46px;font-weight:800;color:var(--green);line-height:1}
+  .scorenum small{font-size:16px;color:var(--muted);font-weight:600}
+  .summary{font-size:14px;color:var(--ink)}
+  .imgcard img{width:100%;border-radius:10px;display:block}
+  .imgcard h3{margin:0 0 10px;font-size:15px}
+  .sub{font-size:12.5px;color:var(--muted);margin:-4px 0 12px}
+  .metric{border:1px solid var(--line);border-radius:12px;padding:13px;margin-bottom:11px}
+  .metric .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .metric .name{font-weight:600;font-size:14.5px}
+  .metric .val{font-size:14px;font-weight:700}
+  .badge{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .badge.ok{background:#e3f5ea;color:var(--ok)}
+  .badge.no{background:#fcecdf;color:var(--warn)}
+  .track{position:relative;height:8px;background:#eef2f0;border-radius:6px;margin:11px 0 9px}
+  .band{position:absolute;top:0;bottom:0;background:#cdeed9;border-radius:6px}
+  .marker{position:absolute;top:-3px;width:14px;height:14px;border-radius:50%;
+          background:var(--green);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transform:translateX(-50%)}
+  .tip{font-size:13px;color:#41504a;margin-top:4px}
+  .err{display:none;background:#fdecea;color:#c0392b;padding:13px;border-radius:10px;font-size:14px;margin-top:12px}
+  footer{text-align:center;font-size:11.5px;color:var(--muted);padding:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎾 SmartTennis</h1>
+  <p>上传 10 秒正手视频，对照德约动力链</p>
+</header>
+
+<div class="wrap">
+  <div class="card upload" id="uploadCard">
+    <div class="steps">
+      <div class="step"><b>1</b>侧面拍摄</div>
+      <div class="step"><b>2</b>击球居中</div>
+      <div class="step"><b>3</b>全身入镜</div>
+    </div>
+    <input type="file" id="fileInput" accept="video/*" capture="environment">
+    <button class="btn" id="pickBtn">📹 拍摄 / 选择视频</button>
+    <div id="fileName"></div>
+    <button class="btn" id="analyzeBtn" style="display:none">开始分析</button>
+    <div class="hint">建议：侧面机位、单人入镜、把击球瞬间放在视频中段。10 秒以内最佳。</div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="spinner" id="spinner">
+    <div class="ring"></div>
+    <div>正在提取骨骼并分析动力链…<br><small style="color:var(--muted)">约需 10–30 秒</small></div>
+  </div>
+
+  <div id="result">
+    <div class="card">
+      <div class="scorebar">
+        <div class="scorenum" id="score">0<small>/100</small></div>
+        <div class="summary" id="summary"></div>
+      </div>
+    </div>
+    <div class="card imgcard">
+      <h3>动力链时序</h3>
+      <div class="sub">实线=你，虚线=德约；越靠右越接近击球。理想顺序：髋→肩→上臂→前臂→手腕。</div>
+      <img id="chartImg" alt="动力链时序图">
+    </div>
+    <div class="card imgcard" id="overlayCard">
+      <h3>影子对比（击球瞬间）</h3>
+      <div class="sub">蓝=你，橙=德约，已按身材归一化叠加。</div>
+      <img id="overlayImg" alt="影子骨架叠加">
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 4px">逐项诊断</h3>
+      <div class="sub">绿带 = 德约正手的正常区间</div>
+      <div id="metrics"></div>
+    </div>
+    <button class="btn secondary" id="againBtn">重新分析另一段</button>
+  </div>
+</div>
+
+<footer>SmartTennis MVP · 2D 骨骼动力链分析 · 仅供训练参考</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const fileInput=$("#fileInput"), pickBtn=$("#pickBtn"), analyzeBtn=$("#analyzeBtn"),
+      fileName=$("#fileName"), spinner=$("#spinner"), result=$("#result"),
+      uploadCard=$("#uploadCard"), err=$("#err");
+let chosen=null;
+
+pickBtn.onclick=()=>fileInput.click();
+fileInput.onchange=()=>{
+  chosen=fileInput.files[0]||null;
+  if(chosen){fileName.textContent="已选择："+chosen.name;analyzeBtn.style.display="";err.style.display="none";}
+};
+$("#againBtn").onclick=()=>{result.style.display="none";uploadCard.style.display="";
+  fileName.textContent="";analyzeBtn.style.display="none";chosen=null;fileInput.value="";
+  window.scrollTo({top:0,behavior:"smooth"});};
+
+analyzeBtn.onclick=async()=>{
+  if(!chosen)return;
+  err.style.display="none";uploadCard.style.display="none";spinner.classList.add("on");
+  try{
+    const fd=new FormData();fd.append("video",chosen);
+    const r=await fetch("/api/analyze",{method:"POST",body:fd});
+    const data=await r.json();
+    if(!r.ok||!data.ok)throw new Error(data.detail||"分析失败，请重试");
+    render(data);
+  }catch(e){
+    spinner.classList.remove("on");uploadCard.style.display="";
+    err.textContent="⚠️ "+e.message;err.style.display="block";
+  }
+};
+
+function render(d){
+  spinner.classList.remove("on");
+  $("#score").innerHTML=d.report.score+'<small>/100</small>';
+  $("#summary").textContent=d.report.summary;
+  $("#chartImg").src=d.kinetic_chart;
+  if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
+  else $("#overlayCard").style.display="none";
+
+  const box=$("#metrics");box.innerHTML="";
+  d.report.items.forEach(it=>{
+    // 区间可视化范围：留出边距
+    const span=Math.max(it.band_hi-it.band_lo,1e-6);
+    const lo=it.band_lo-span*0.8, hi=it.band_hi+span*0.8, rng=hi-lo;
+    const pct=v=>Math.min(100,Math.max(0,(v-lo)/rng*100));
+    const bl=pct(it.band_lo), bw=pct(it.band_hi)-pct(it.band_lo), mk=pct(it.value);
+    const unit=it.unit||"";
+    box.insertAdjacentHTML("beforeend",`
+      <div class="metric">
+        <div class="top">
+          <span class="name">${it.label}</span>
+          <span class="badge ${it.ok?'ok':'no'}">${it.ok?'✓ 正常':'需改进'}</span>
+        </div>
+        <div class="val">你 ${it.value}${unit} <span style="color:var(--muted);font-weight:500">· 德约 ${it.band_lo}~${it.band_hi}${unit}</span></div>
+        <div class="track">
+          <div class="band" style="left:${bl}%;width:${bw}%"></div>
+          <div class="marker" style="left:${mk}%"></div>
+        </div>
+        <div class="tip">${it.tip}</div>
+      </div>`);
+  });
+  result.style.display="block";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+</script>
+</body>
+</html>

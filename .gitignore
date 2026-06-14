@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 运行时临时文件
+*.tmp
+uploads/
+_resp.json
+_idx.html
+_e2e_*.png
+_validate_*.png
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code 本地预览配置 (含本机路径)
+.claude/
