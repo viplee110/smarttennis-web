@@ -129,9 +129,9 @@ def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
 
 
 def render_shadow_overlay(user_pose_img, ref_pose_img,
-                          user_hand: str = "R", ref_hand: str = "R") -> str:
+                          mirror_user: bool = False) -> str:
     cjk = _use_cjk_font()
-    mirror_user = user_hand != ref_hand              # 惯用手不同 → 镜像用户以可比
+    # mirror_user 由调用方按真实面朝方向决定 (机位左右相反 → 镜像用户以对齐)
     user = _normalize_skeleton(user_pose_img, mirror=mirror_user)
     ref = _normalize_skeleton(ref_pose_img)
     fig, axes = plt.subplots(1, 3, figsize=(8.4, 3.4))

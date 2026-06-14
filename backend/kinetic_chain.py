@@ -83,6 +83,21 @@ def _center_weight(T: int, sigma_frac: float = 0.18) -> np.ndarray:
     return np.exp(-0.5 * ((idx - c) / sigma) ** 2)
 
 
+def detect_facing(frames) -> float:
+    """面朝方向: 鼻子相对双耳中点的水平偏移 (鼻在前)。
+    +1 = 面朝图像右侧(+x), -1 = 面朝左侧。用于跨机位镜像对齐。"""
+    NOSE, EAR_L, EAR_R = 0, 7, 8
+    vals = []
+    for f in frames:
+        im = f.get("img")
+        if not im:
+            continue
+        vals.append(im[NOSE][0] - (im[EAR_L][0] + im[EAR_R][0]) / 2.0)
+    if not vals:
+        return 1.0
+    return 1.0 if float(np.mean(vals)) >= 0 else -1.0
+
+
 def detect_handedness(world: np.ndarray, fps: float) -> str:
     """挥拍手 = 中心加权手腕速度峰值更高的那只手。"""
     w = _center_weight(world.shape[0])
@@ -203,4 +218,5 @@ def analyze(data: dict, hand: str = "auto",
     metrics["contact_t"] = float(contact / fps)
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
+            "facing": detect_facing(data["frames"]),
             "metrics": metrics, "valid_ratio": float(valid.mean())}

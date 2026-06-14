@@ -30,6 +30,20 @@ app = FastAPI(title="SmartTennis MVP")
 with open(REFERENCE_PATH, encoding="utf-8") as fh:
     REFERENCE = json.load(fh)
 
+# 德约参考的面朝方向 (用于跨机位镜像对齐)
+_ref_cp = REFERENCE["reference"].get("contact_pose_img")
+REF_FACING = kc.detect_facing([{"img": _ref_cp}]) if _ref_cp else 1.0
+
+
+def _nearest_pose(frames, idx, radius=10):
+    """从 idx 向两侧找最近一个检测到人体的帧 (避免击球糊帧没骨架)。"""
+    n = len(frames)
+    for d in range(radius + 1):
+        for j in (idx - d, idx + d):
+            if 0 <= j < n and frames[j].get("img"):
+                return j, frames[j]["img"]
+    return idx, None
+
 
 @app.get("/api/health")
 def health():
@@ -60,8 +74,8 @@ async def analyze(video: UploadFile = File(...), hand: str = Form("auto")):
         chart = shadow.render_kinetic_chart(
             res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"))
 
-        contact_idx = res["contact"]
-        contact_pose = landmarks["frames"][contact_idx].get("img")
+        # 击球帧可能因运动模糊未检测到人体 → 就近回退到最近的有效帧
+        contact_idx, contact_pose = _nearest_pose(landmarks["frames"], res["contact"])
 
         # 用户击球瞬间真实帧 + 骨架
         user_contact = None
@@ -69,11 +83,12 @@ async def analyze(video: UploadFile = File(...), hand: str = Form("auto")):
         if frame is not None and contact_pose:
             user_contact = shadow.draw_skeleton_on_frame(frame, contact_pose)
 
+        # 机位左右相反则镜像用户骨架以对齐德约
+        mirror_user = res.get("facing", 1.0) != REF_FACING
         overlay = None
         if contact_pose and ref.get("contact_pose_img"):
             overlay = shadow.render_shadow_overlay(
-                contact_pose, ref["contact_pose_img"],
-                user_hand=res["signals"]["hand"], ref_hand=ref.get("hand", "R"))
+                contact_pose, ref["contact_pose_img"], mirror_user=mirror_user)
 
         return JSONResponse({
             "ok": True,
