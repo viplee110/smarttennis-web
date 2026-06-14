@@ -75,8 +75,10 @@
       <div class="step"><b>2</b>击球居中</div>
       <div class="step"><b>3</b>全身入镜</div>
     </div>
-    <input type="file" id="fileInput" accept="video/*" capture="environment">
-    <button class="btn" id="pickBtn">📹 拍摄 / 选择视频</button>
+    <input type="file" id="camInput" accept="video/*" capture="environment">
+    <input type="file" id="fileInput" accept="video/*">
+    <button class="btn" id="camBtn">📹 现场拍摄</button>
+    <button class="btn secondary" id="pickBtn">🖼 从相册/文件选择视频</button>
     <div id="fileName"></div>
     <button class="btn" id="analyzeBtn" style="display:none">开始分析</button>
     <div class="hint">建议：侧面机位、单人入镜、把击球瞬间放在视频中段。10 秒以内最佳。</div>
@@ -118,18 +120,23 @@
 
 <script>
 const $ = s => document.querySelector(s);
-const fileInput=$("#fileInput"), pickBtn=$("#pickBtn"), analyzeBtn=$("#analyzeBtn"),
+const camInput=$("#camInput"), fileInput=$("#fileInput"),
+      camBtn=$("#camBtn"), pickBtn=$("#pickBtn"), analyzeBtn=$("#analyzeBtn"),
       fileName=$("#fileName"), spinner=$("#spinner"), result=$("#result"),
       uploadCard=$("#uploadCard"), err=$("#err");
 let chosen=null;
 
+camBtn.onclick=()=>camInput.click();
 pickBtn.onclick=()=>fileInput.click();
-fileInput.onchange=()=>{
-  chosen=fileInput.files[0]||null;
+function onPick(input){
+  chosen=input.files[0]||null;
   if(chosen){fileName.textContent="已选择："+chosen.name;analyzeBtn.style.display="";err.style.display="none";}
-};
+}
+camInput.onchange=()=>onPick(camInput);
+fileInput.onchange=()=>onPick(fileInput);
 $("#againBtn").onclick=()=>{result.style.display="none";uploadCard.style.display="";
-  fileName.textContent="";analyzeBtn.style.display="none";chosen=null;fileInput.value="";
+  fileName.textContent="";analyzeBtn.style.display="none";chosen=null;
+  camInput.value="";fileInput.value="";
   window.scrollTo({top:0,behavior:"smooth"});};
 
 analyzeBtn.onclick=async()=>{
