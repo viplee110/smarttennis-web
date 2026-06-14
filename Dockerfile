@@ -8,8 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 先装依赖以利用层缓存
+# 可选 PyPI 镜像: 国内构建传 --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 加速
+ARG PIP_INDEX_URL=https://pypi.org/simple
 COPY backend/requirements.txt backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+RUN pip install --no-cache-dir -i ${PIP_INDEX_URL} -r backend/requirements.txt
 
 COPY . .
 
