@@ -10,8 +10,9 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     fi
 
 # MediaPipe / OpenCV / 视频解码所需的系统库
+# 注意: MediaPipe 原生库依赖 GL/GLES (libGLESv2.so.2, libEGL.so.1)，缺则 create_from_options 报 OSError
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ffmpeg libglib2.0-0 libgl1 \
+        ffmpeg libglib2.0-0 libgl1 libgles2 libegl1 libopengl0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
