@@ -16,6 +16,9 @@ import kinetic_chain as kc
 METRIC_KEYS = ["hip_to_forearm_lag", "xfactor_magnitude", "xfactor_release"]
 # 已人工验证的基准条 (用完整文件名精确匹配, 避免其他视频的同名 stroke_027 误覆盖)
 REF_STROKE = "Novak_Djokovic_Forehand_Slow_Motion__stroke_027"
+# 人工核对的真·触球帧: 自动检测给 130 (尚在拍头下降), 137 才是拍面触球。
+# 仅用于参考姿态/理想曲线的锚点; 绿带统计仍用各条自动 contact 保持一致。
+REF_CONTACT = 137
 
 
 def _iqr(vals: list[float]) -> dict:
@@ -47,7 +50,8 @@ def build(src_dir: str, out_path: str) -> dict:
         used += 1
 
         if os.path.splitext(os.path.basename(fp))[0] == REF_STROKE:
-            ref_payload = _extract_reference_pose(data, res)
+            res_ref = kc.analyze(data, contact_override=REF_CONTACT)   # 锚定真·触球帧
+            ref_payload = _extract_reference_pose(data, res_ref)
 
     if ref_payload is None and files:                 # 兜底: 用第一条做参考姿态
         d0 = json.load(open(files[0], encoding="utf-8"))
