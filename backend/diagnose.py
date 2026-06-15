@@ -9,11 +9,11 @@ import math
 
 # direction: "higher"=越大越好(到中位即满分), "band"=越接近德约区间越好。
 METRIC_META = {
-    "hip_to_forearm_lag": {
-        "label": "发力时序 (髋领先手臂)", "unit": "", "direction": "higher",
-        "good": "髋明显领先手臂发力, 力从下盘传到手臂, 动力链顺畅。",
-        "below": "髋和手臂几乎同时发力 → 在'用手臂打球'。试着引拍后先转髋顶髋, 让手臂稍晚跟随甩出。",
-        "above": "时序非常充分。",
+    "seq_lead": {
+        "label": "发力链顺序 (近端→远端)", "unit": "", "direction": "band",
+        "good": "下盘/躯干先发力, 再依次传到手臂, 动力链顺畅、与德约接近。",
+        "below": "近端领先不足(几乎同时发力) → 偏'用手臂打'。引拍后先转髋顶髋, 让手臂稍晚依次跟随甩出。",
+        "above": "近端领先偏多, 注意各环节衔接别脱节。",
     },
     "xfactor_magnitude": {
         "label": "X-factor 装载幅度", "unit": "°", "direction": "band",
@@ -21,14 +21,8 @@ METRIC_META = {
         "above": "肩髋分离偏大, 注意别过度扭转导致还原慢或腰部负担。",
         "below": "上下半身分离不足, 蓄力偏小。引拍时多转肩、稳住下盘, 制造更大的肩髋夹角来储能。",
     },
-    "xfactor_release": {
-        "label": "X-factor 释放 (击球时机)", "unit": "°", "direction": "band",
-        "good": "击球瞬间分离释放时机合适, 力量顺畅传导到球。",
-        "above": "击球时分离释放不足/过早, 容易只用手臂打。让髋带动躯干充分回正再触球。",
-        "below": "击球时过度反向, 时机偏晚。",
-    },
 }
-ORDER = ["hip_to_forearm_lag", "xfactor_magnitude", "xfactor_release"]
+ORDER = ["seq_lead", "xfactor_magnitude"]
 SEQ_LABELS = {"hip": "髋", "shoulder": "肩", "upper_arm": "上臂",
               "forearm": "前臂", "wrist": "手腕"}
 SEQ_ORDER = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]

@@ -215,32 +215,35 @@ def compute_metrics(signals: dict, contact: int) -> dict:
     w0 = max(0, contact - int(round(0.6 * fps)))
     w1 = min(len(tarr), contact + int(round(0.15 * fps)) + 1)
     seg = slice(w0, w1)
-    # 五个环节各自的峰值时刻 (相对击球瞬间, 秒), 用于"发力顺序"透明展示
+    # 五个环节各自的"发力时刻"(相对击球, 秒): 用强度加权质心而非 argmax,
+    # 在低帧率+姿态抖动下远比单帧峰值稳定 (argmax 会让各环节挤成同一帧)。
     order = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]
-    peak_idx = {k: w0 + int(np.argmax(signals["raw"][k][seg])) for k in order}
-    peak_times = {k: round(float(tarr[peak_idx[k]] - tarr[contact]), 3) for k in order}
-    hip_pk, fore_pk = peak_idx["hip"], peak_idx["forearm"]
-    lag_s = tarr[fore_pk] - tarr[hip_pk]
-    # 归一化: 0.20s 视为理想满分窗口 (髋显著领先前臂 = 良好动力链)
-    hip_to_forearm_lag = float(np.clip(lag_s / 0.20, 0.0, 1.0))
+    tt = np.asarray(tarr[seg]) - tarr[contact]
+    peak_times = {}
+    for k in order:
+        s = np.asarray(signals["raw"][k][seg], dtype=float)
+        s = s / (s.max() + 1e-9)
+        wts = np.clip(s - 0.5, 0.0, None) ** 2          # 只让"明显发力"的区间计入质心
+        if wts.sum() < 1e-6:
+            wts = s
+        peak_times[k] = round(float((tt * wts).sum() / (wts.sum() + 1e-9)), 3)
+    # 粗粒度近端→远端领先 (秒): 距端组(上臂/前臂/手腕)质心 − 近端组(髋/肩)质心。
+    # 远端三环节峰差 <1帧、低于25-30fps分辨率不可靠, 故只取"组级"这个可分辨的信号。
+    prox = (peak_times["hip"] + peak_times["shoulder"]) / 2.0
+    dist = (peak_times["upper_arm"] + peak_times["forearm"] + peak_times["wrist"]) / 3.0
+    prox_lead_s = round(float(dist - prox), 3)          # 正 = 近端先发力(好)
 
     xf = signals["xfactor"]
     pre = xf[:contact + 1] if contact > 0 else xf
-    # X-factor 装载幅度 = 击球前的最大分离绝对值
-    xfactor_magnitude = float(np.max(np.abs(pre)))
-    # X-factor 释放 = 击球瞬间残留的分离 (deg)
-    xfactor_release = float(xf[contact]) if contact < len(xf) else float(xf[-1])
+    xfactor_magnitude = float(np.max(np.abs(pre)))     # 击球前最大肩髋分离
 
     return {
-        "hip_to_forearm_lag": hip_to_forearm_lag,
+        "prox_lead_s": prox_lead_s,
         "xfactor_magnitude": xfactor_magnitude,
-        "xfactor_release": xfactor_release,
         "contact_frame": int(contact),
         "contact_t": float(tarr[contact]) if contact < len(tarr) else float(tarr[-1]),
-        "hip_peak_t": float(tarr[hip_pk]),
-        "forearm_peak_t": float(tarr[fore_pk]),
         "peak_times": peak_times,
-        "sequence_ok": bool(peak_times["hip"] <= peak_times["forearm"] <= peak_times["wrist"] + 1e-6),
+        "sequence_ok": bool(prox_lead_s > 0),
     }
 
 
@@ -282,6 +285,8 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     metrics = compute_metrics(signals, local_contact)
     metrics["contact_frame"] = int(contact)             # 覆盖为全段帧
     metrics["contact_t"] = float(contact / fps)
+    # 发力链展开度归一化为相位 (节奏无关): 展开秒数 ÷ 装载时长
+    metrics["seq_lead"] = round(metrics.pop("prox_lead_s", 0.0) / loading_s, 3)
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
             "facing": facing, "n_frames": int(world.shape[0]),
