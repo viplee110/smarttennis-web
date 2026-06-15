@@ -14,7 +14,8 @@ import numpy as np
 import kinetic_chain as kc
 
 METRIC_KEYS = ["hip_to_forearm_lag", "xfactor_magnitude", "xfactor_release"]
-REF_STROKE = "stroke_027"   # 已人工验证的基准条
+# 已人工验证的基准条 (用完整文件名精确匹配, 避免其他视频的同名 stroke_027 误覆盖)
+REF_STROKE = "Novak_Djokovic_Forehand_Slow_Motion__stroke_027"
 
 
 def _iqr(vals: list[float]) -> dict:
@@ -45,7 +46,7 @@ def build(src_dir: str, out_path: str) -> dict:
             samples[k].append(m[k])
         used += 1
 
-        if REF_STROKE in os.path.basename(fp):
+        if os.path.splitext(os.path.basename(fp))[0] == REF_STROKE:
             ref_payload = _extract_reference_pose(data, res)
 
     if ref_payload is None and files:                 # 兜底: 用第一条做参考姿态
