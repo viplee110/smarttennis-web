@@ -69,6 +69,17 @@
   .tip{font-size:13px;color:#41504a;margin-top:4px}
   .err{display:none;background:#fdecea;color:#c0392b;padding:13px;border-radius:10px;font-size:14px;margin-top:12px}
   footer{text-align:center;font-size:11.5px;color:var(--muted);padding:10px}
+  .cadj{margin-top:12px;border-top:1px solid #eef0ef;padding-top:12px}
+  .cslider{width:100%;margin:10px 0 4px;accent-color:var(--green)}
+  .cstatus{font-size:13px;color:var(--green);font-weight:600;text-align:center;min-height:18px}
+  .cadj.busy{opacity:.55;pointer-events:none}
+  #seqList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .seqitem{flex:1;min-width:54px;background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center}
+  .seqitem .nm{font-size:13px;font-weight:700;color:var(--ink)}
+  .seqitem .tt{font-size:12px;color:var(--muted);margin-top:2px}
+  .seqitem.bad{background:#fdeeee}
+  .seqnote{font-size:13px;margin-top:8px;font-weight:600}
+  .seqnote.ok{color:var(--green)}.seqnote.no{color:#c0392b}
 </style>
 </head>
 <body>
@@ -119,6 +130,16 @@
         <figure><img id="userContactImg" alt="你的击球瞬间"><figcaption>你</figcaption></figure>
         <figure><img id="djokoContactImg" alt="德约击球瞬间"><figcaption>德约</figcaption></figure>
       </div>
+      <div class="cadj" id="contactAdj">
+        <div class="sub">⚠️ 自动识别的击球帧未必精准。<b>拖动滑杆</b>选到球拍触球那一帧，整份分析会自动重算。</div>
+        <input type="range" id="contactSlider" class="cslider">
+        <div class="cstatus" id="cstatus"></div>
+      </div>
+    </div>
+    <div class="card" id="seqCard">
+      <h3 style="margin:0 0 4px">发力顺序</h3>
+      <div class="sub">各环节发力峰值相对击球的时刻（负=更早）。理想：髋最先 → 手腕最后。这是上面动力链图的数字版。</div>
+      <div id="seqList"></div>
     </div>
     <div class="card imgcard">
       <h3>动力链时序</h3>
@@ -146,8 +167,10 @@ const $ = s => document.querySelector(s);
 const camInput=$("#camInput"), fileInput=$("#fileInput"),
       camBtn=$("#camBtn"), pickBtn=$("#pickBtn"), analyzeBtn=$("#analyzeBtn"),
       fileName=$("#fileName"), spinner=$("#spinner"), result=$("#result"),
-      uploadCard=$("#uploadCard"), err=$("#err");
-let chosen=null;
+      uploadCard=$("#uploadCard"), err=$("#err"),
+      contactSlider=$("#contactSlider"), cstatus=$("#cstatus"),
+      contactAdj=$("#contactAdj"), seqList=$("#seqList");
+let chosen=null, session=null;
 
 let handChoice="auto";
 document.querySelectorAll("#handsel button").forEach(b=>b.onclick=()=>{
@@ -184,15 +207,58 @@ analyzeBtn.onclick=async()=>{
 
 function render(d){
   spinner.classList.remove("on");
+  session={token:d.token, thumbs:d.thumbs||{}};
+  if(d.window && d.token){
+    contactSlider.min=d.window[0]; contactSlider.max=d.window[1]; contactSlider.value=d.contact;
+    contactAdj.style.display="";
+  } else contactAdj.style.display="none";
+  paint(d);
+  result.style.display="block";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+contactSlider.oninput=()=>{
+  const f=contactSlider.value;
+  if(session&&session.thumbs[f]) $("#userContactImg").src=session.thumbs[f];
+  cstatus.textContent="第 "+f+" 帧（松开滑杆后重新分析）";
+};
+contactSlider.onchange=async()=>{
+  if(!session||!session.token)return;
+  const f=contactSlider.value;
+  contactAdj.classList.add("busy"); cstatus.textContent="重新分析中…";
+  try{
+    const fd=new FormData();fd.append("token",session.token);fd.append("contact",f);
+    const r=await fetch("/api/recompute",{method:"POST",body:fd});
+    const d=await r.json();
+    if(!r.ok||!d.ok)throw new Error(d.detail||"重算失败，请重试");
+    paint(d);
+  }catch(e){cstatus.textContent="⚠️ "+e.message;}
+  finally{contactAdj.classList.remove("busy");}
+};
+
+function paint(d){
   $("#score").innerHTML=d.report.score+'<small>/100</small>';
   $("#summary").textContent=d.report.summary;
   if(d.user_contact){$("#userContactImg").src=d.user_contact;
     $("#djokoContactImg").src=d.djokovic_contact||"/assets/djokovic_contact.jpg";
     $("#contactCard").style.display="";}
   else $("#contactCard").style.display="none";
+  cstatus.textContent="当前击球帧：第 "+d.contact+" 帧";
   $("#chartImg").src=d.kinetic_chart;
   if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
   else $("#overlayCard").style.display="none";
+
+  const seq=d.report.sequencing||[], sc=$("#seqCard");
+  seqList.innerHTML="";
+  seq.forEach(s=>seqList.insertAdjacentHTML("beforeend",
+    `<div class="seqitem"><div class="nm">${s.label}</div><div class="tt">${s.t>0?'+':''}${s.t}s</div></div>`));
+  if(seq.length){sc.style.display="";
+    let note=sc.querySelector(".seqnote");
+    if(!note){note=document.createElement("div");note.className="seqnote";sc.appendChild(note);}
+    note.className="seqnote "+(d.report.sequence_ok?"ok":"no");
+    note.textContent=d.report.sequence_ok?"✓ 发力顺序正确（近端到远端依次发力）"
+      :"✗ 发力顺序紊乱：未按 髋→肩→上臂→前臂→手腕 依次发力";
+  } else sc.style.display="none";
 
   const box=$("#metrics");box.innerHTML="";
   d.report.items.forEach(it=>{
@@ -216,8 +282,6 @@ function render(d){
         <div class="tip">${it.tip}</div>
       </div>`);
   });
-  result.style.display="block";
-  window.scrollTo({top:0,behavior:"smooth"});
 }
 </script>
 </body>
