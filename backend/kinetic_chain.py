@@ -208,8 +208,11 @@ def compute_metrics(signals: dict, contact: int) -> dict:
     w0 = max(0, contact - int(round(0.6 * fps)))
     w1 = min(len(tarr), contact + int(round(0.15 * fps)) + 1)
     seg = slice(w0, w1)
-    hip_pk = w0 + int(np.argmax(signals["raw"]["hip"][seg]))
-    fore_pk = w0 + int(np.argmax(signals["raw"]["forearm"][seg]))
+    # 五个环节各自的峰值时刻 (相对击球瞬间, 秒), 用于"发力顺序"透明展示
+    order = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]
+    peak_idx = {k: w0 + int(np.argmax(signals["raw"][k][seg])) for k in order}
+    peak_times = {k: round(float(tarr[peak_idx[k]] - tarr[contact]), 3) for k in order}
+    hip_pk, fore_pk = peak_idx["hip"], peak_idx["forearm"]
     lag_s = tarr[fore_pk] - tarr[hip_pk]
     # 归一化: 0.20s 视为理想满分窗口 (髋显著领先前臂 = 良好动力链)
     hip_to_forearm_lag = float(np.clip(lag_s / 0.20, 0.0, 1.0))
@@ -229,6 +232,8 @@ def compute_metrics(signals: dict, contact: int) -> dict:
         "contact_t": float(tarr[contact]) if contact < len(tarr) else float(tarr[-1]),
         "hip_peak_t": float(tarr[hip_pk]),
         "forearm_peak_t": float(tarr[fore_pk]),
+        "peak_times": peak_times,
+        "sequence_ok": bool(peak_times["hip"] <= peak_times["forearm"] <= peak_times["wrist"] + 1e-6),
     }
 
 
