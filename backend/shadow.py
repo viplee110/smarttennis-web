@@ -48,36 +48,48 @@ def _use_cjk_font():
 
 
 def render_kinetic_chart(signals: dict, contact_t: float,
-                         ideal_curve: dict | None = None) -> str:
+                         ideal_curve: dict | None = None,
+                         user_loading_s: float = 0.0) -> str:
+    """相位归一化对齐: 横轴 = 挥拍相位 (0=击球, -1=前挥起点)。
+    各自除以自己的"装载时长", 让两人在【前挥起点 + 击球】两点对齐, 跨节奏可比。
+    """
     cjk = _use_cjk_font()
     lab = {"hip": "Hip", "shoulder": "Shoulder", "upper_arm": "Upper arm",
            "forearm": "Forearm", "wrist": "Wrist"}
-    t = np.asarray(signals["t"]) - float(contact_t)   # 相对击球时间, 击球=0
+    du = float(user_loading_s) if user_loading_s and user_loading_s > 1e-3 else 1.0
+    t = (np.asarray(signals["t"]) - float(contact_t)) / du   # 归一化相位, 击球=0
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(7.2, 4.6), gridspec_kw={"height_ratios": [3, 1]}, sharex=True)
     for key, zh, c in SIGNAL_STYLE:
         ax1.plot(t, signals["norm"][key], color=c, lw=1.8,
                  label=(zh if cjk else lab[key]))
-    if ideal_curve:                                   # 德约理想曲线 (淡虚线, 已是相对时间)
-        ti = np.asarray(ideal_curve["t"])
+    if ideal_curve:                                   # 德约理想曲线 (淡虚线), 同样按相位归一化
+        dj = float(ideal_curve.get("loading_s") or 0.0)
+        dj = dj if dj > 1e-3 else 1.0
+        ti = np.asarray(ideal_curve["t"]) / dj
         for key, _zh, c in SIGNAL_STYLE:
             ax1.plot(ti, ideal_curve[key], color=c, lw=1.0, ls=":", alpha=0.5)
-    ax1.axvline(0, ls="--", color="gray", lw=1)
-    ax1.text(0, 1.14, ("击球" if cjk else "contact"),
-             ha="center", fontsize=8, color="gray")
+    for ax in (ax1, ax2):
+        ax.axvline(0, ls="--", color="gray", lw=1)        # 击球
+        ax.axvline(-1, ls=":", color="#bbb", lw=1)        # 前挥起点
+    ax1.text(0, 1.14, ("击球" if cjk else "contact"), ha="center", fontsize=8, color="gray")
+    ax1.text(-1, 1.14, ("前挥起点" if cjk else "swing start"), ha="center", fontsize=7.5, color="#aaa")
     ax1.set_ylabel("归一化角速度/速度" if cjk else "normalized speed", fontsize=9)
-    title = ("动力链时序 (实线=你, 虚线=德约)" if cjk
-             else "Kinetic chain (solid=you, dotted=Djokovic)")
+    title = ("动力链时序 (实线=你, 虚线=德约; 已相位对齐)" if cjk
+             else "Kinetic chain (solid=you, dotted=Djokovic; phase-aligned)")
     ax1.set_title(title, fontsize=10)
     ax1.legend(fontsize=7, ncol=3, loc="upper left")
     ax1.set_ylim(0, 1.2)
+    ax1.set_xlim(-1.6, 0.9)
     ax2.plot(t, signals["xfactor"], color="#9467bd", lw=1.8)
     if ideal_curve and "xfactor" in ideal_curve:
-        ax2.plot(np.asarray(ideal_curve["t"]), ideal_curve["xfactor"],
+        dj = float(ideal_curve.get("loading_s") or 0.0)
+        dj = dj if dj > 1e-3 else 1.0
+        ax2.plot(np.asarray(ideal_curve["t"]) / dj, ideal_curve["xfactor"],
                  color="#9467bd", lw=1.0, ls=":", alpha=0.5)
-    ax2.axvline(0, ls="--", color="gray", lw=1)
     ax2.set_ylabel("X-factor (°)", fontsize=9)
-    ax2.set_xlabel("相对击球时间 (s)" if cjk else "time relative to contact (s)", fontsize=9)
+    ax2.set_xlabel("挥拍相位 (0=击球, -1=前挥起点)" if cjk
+                   else "swing phase (0=contact, -1=swing start)", fontsize=9)
     return _fig_to_b64(fig)
 
 

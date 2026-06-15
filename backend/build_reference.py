@@ -84,6 +84,7 @@ def _extract_reference_pose(data: dict, res: dict) -> dict:
     step = max(1, len(t_rel) // 60)
     curve = {
         "t": [round(float(x), 3) for x in t_rel[::step]],
+        "loading_s": round(float(res.get("loading_s", 0.0)), 4),   # 装载时长, 供相位归一化
         "xfactor": [round(float(x), 2) for x in s["xfactor"][::step]],
         **{k: [round(float(x), 3) for x in s["norm"][k][::step]]
            for k in ["hip", "shoulder", "upper_arm", "forearm", "wrist"]},

@@ -68,7 +68,8 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
     report = diagnose.diagnose(res["metrics"], REFERENCE)
     ref = REFERENCE["reference"]
     chart = shadow.render_kinetic_chart(
-        res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"))
+        res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"),
+        user_loading_s=res.get("loading_s", 0.0))
 
     contact_idx, contact_pose = _nearest_pose(landmarks["frames"], res["contact"])
     user_contact = None

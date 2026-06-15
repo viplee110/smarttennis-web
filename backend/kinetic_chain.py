@@ -175,27 +175,34 @@ def _img_track(frames, j: int) -> np.ndarray:
     return a
 
 
-def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) -> int:
-    """击球瞬间(近似) = 前挥窗口内手腕"向前速度"最大的帧。
+def detect_swing(frames, fps: float, hand: str = "R", facing: float = None):
+    """返回 (contact, forward_swing_start) 全段帧索引。
 
-    前挥窗口 = [引拍末端(手腕在挥击方向最靠后), 随挥(最靠前)]。
-    用图像坐标(可靠), facing 投影出"向前"方向, 避免引拍的反向快动作被误判。
+    forward_swing_start(引拍末端) = 手腕在挥击方向最靠后处;
+    contact(击球, 近似) = 前挥窗口[起点,随挥最靠前]内手腕"向前速度"最大处。
+    用图像坐标(可靠) + facing 投影出"向前"方向, 避免引拍反向快动作误判。
     纯姿态有 ~±0.4s 固有误差, 仅作自动起点, 由前端滑杆做绝对校正。
     """
     if facing is None:
         facing = detect_facing(frames)
     wr = R_WR if hand != "L" else L_WR
-    w = _img_track(frames, wr)
-    wx = _smooth(w[:, 0], 5)
+    wx = _smooth(_img_track(frames, wr)[:, 0], 5)
     T = len(frames)
     fpos = facing * wx                       # 向挥击方向的位置
     vf = facing * np.gradient(wx)            # 向挥击方向的速度
-    back = int(np.argmin(fpos[: max(2, int(T * 0.6))]))   # 引拍末端
+    back0 = int(np.argmin(fpos[: max(2, int(T * 0.6))]))  # 粗定前挥窗口
     fwd_end = int(np.argmax(fpos))                         # 随挥(最靠前)
-    if fwd_end <= back:
+    if fwd_end <= back0:
         fwd_end = T - 1
-    seg = slice(back, fwd_end + 1)
-    return back + int(np.argmax(vf[seg]))
+    contact = back0 + int(np.argmax(vf[slice(back0, fwd_end + 1)]))
+    # 引拍起点(精): 仅在击球前 2s 内找手腕最靠后处, 避免早期准备动作被误当引拍
+    lo_w = max(0, contact - int(round(2.0 * fps)))
+    swing_start = lo_w + int(np.argmin(fpos[lo_w: contact + 1])) if contact > lo_w else lo_w
+    return contact, swing_start
+
+
+def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) -> int:
+    return detect_swing(frames, fps, hand, facing)[0]
 
 
 def compute_metrics(signals: dict, contact: int) -> dict:
@@ -258,10 +265,16 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     world, valid, fps = load_world(data)
     full = compute_signals(world, fps, hand)
     facing = detect_facing(data["frames"])
+    auto_contact, swing_start = detect_swing(data["frames"], fps, full["hand"], facing)
     if contact_override is not None:
         contact = int(max(0, min(world.shape[0] - 1, contact_override)))
     else:
-        contact = detect_contact(data["frames"], fps, full["hand"], facing)
+        contact = auto_contact
+    # 装载时长 = 前挥起点→击球, 用于相位归一化对齐 (跨节奏可比)
+    loading_s = max((contact - swing_start) / fps, 1e-3)
+    # 裁窗按 loading 成比例 (而非固定秒), 使不同节奏的人覆盖同一相位区间 ≈[-1.4, +0.6]
+    pre_s = float(np.clip(1.4 * loading_s, 0.7, 3.0))
+    post_s = float(np.clip(0.6 * loading_s, 0.4, 1.5))
     lo = max(0, contact - int(round(pre_s * fps)))
     hi = min(world.shape[0], contact + int(round(post_s * fps)) + 1)
     signals = _crop_signals(full, lo, hi)
@@ -272,4 +285,5 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
             "facing": facing, "n_frames": int(world.shape[0]),
+            "swing_start": int(swing_start), "loading_s": float(loading_s),
             "metrics": metrics, "valid_ratio": float(valid.mean())}
