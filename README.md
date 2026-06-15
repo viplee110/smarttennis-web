@@ -4,7 +4,7 @@
 
 手机浏览器打开即可现场拍摄并分析，适合面向用户的 demo 展示。
 
-![flow](https://img.shields.io/badge/MediaPipe-pose-blue) ![flow](https://img.shields.io/badge/FastAPI-backend-green)
+![MediaPipe](https://img.shields.io/badge/MediaPipe-pose-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-backend-green) ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 
 ---
 
@@ -99,3 +99,17 @@ docker run -d -p 80:7860 --restart unless-stopped smarttennis
 - contact 检测假设挥拍动作大致位于片段中段（中心加权），请按拍摄建议录制。
 - 诊断基准来自单一来源的德约慢动作素材自动切片，作为 MVP 参考；后续可扩充多机位、多球员、多拍种。
 - 仅支持单人、正手；其他拍种与多人场景为后续迭代项。
+
+---
+
+## License 与商用授权
+
+本项目以 **GNU AGPL-3.0** 开源（见 [LICENSE](LICENSE)）。
+
+- ✅ 欢迎学习、研究、自用、二次开发。
+- ⚠️ **AGPL 关键条款**：若你将本项目（或其衍生版本）**作为联网服务对外提供**，必须在相同 AGPL-3.0 许可下**公开你的完整源码（含修改）**。
+- 💼 **商用 / 闭源授权**：如需在闭源商业产品中使用而不公开源码，请联系作者获取**单独的商业授权**（双授权）。
+
+> 注：本仓库为面向演示的 MVP。完整产品的核心资产（精修的职业动作数据集、训练模型、评分算法）不在此开源范围内。
+
+© 2026 SmartTennis. Licensed under AGPL-3.0.
