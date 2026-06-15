@@ -130,10 +130,16 @@ def compute_signals(world: np.ndarray, fps: float, hand: str = "auto") -> dict:
     # 手腕线速度 (m/s)
     wr_v = np.linalg.norm(np.gradient(world[:, wr], axis=0) * fps, axis=1)
 
-    # X-factor: 肩-髋 在水平面内的原始分离角 (deg)。中立站姿两线近似平行→≈0,
-    # 装载期肩转多于髋→分离增大。不减任意基线, 避免片段首帧站姿差异引入噪声。
-    # 按惯用手规整符号: 左手正手是右手的镜像, 取负后与右手(德约)同一约定下可比。
-    xfactor = np.degrees(sho_ang - hip_ang) * (1.0 if hand == "R" else -1.0)
+    # X-factor: 肩-髋 在水平面内的分离角 (deg)。
+    # 重要: 用"原始角度差再 wrap 到 ±180°", 而非两条 unwrap 角度相减——
+    # 后者会因各自缠绕累积出几百度的垃圾值 (深度噪声所致)。
+    hip_raw = np.arctan2((world[:, R_HIP] - world[:, L_HIP])[:, 2],
+                         (world[:, R_HIP] - world[:, L_HIP])[:, 0])
+    sho_raw = np.arctan2((world[:, R_SH] - world[:, L_SH])[:, 2],
+                         (world[:, R_SH] - world[:, L_SH])[:, 0])
+    dsep = sho_raw - hip_raw
+    xfactor = np.degrees(np.arctan2(np.sin(dsep), np.cos(dsep)))   # wrap 到 [-180,180]
+    xfactor *= (1.0 if hand == "R" else -1.0)   # 左手镜像规整, 与右手同约定可比
 
     sig = {
         "hip": _smooth(hip_av), "shoulder": _smooth(sho_av),
