@@ -148,10 +148,48 @@ def compute_signals(world: np.ndarray, fps: float, hand: str = "auto") -> dict:
     }
 
 
-def detect_contact(signals: dict) -> int:
-    """击球瞬间 = 中心加权手腕线速度峰值帧 (避开恢复/准备的快动作)。"""
-    w = signals["raw"]["wrist"]
-    return int(np.argmax(w * _center_weight(len(w))))
+def _img_track(frames, j: int) -> np.ndarray:
+    """取关节 j 的图像坐标 (x,y) 时序 (T,2)，缺帧线性插值。"""
+    T = len(frames)
+    a = np.full((T, 2), np.nan)
+    for i, f in enumerate(frames):
+        im = f.get("img")
+        if im:
+            a[i] = [im[j][0], im[j][1]]
+    g = np.arange(T)
+    for k in range(2):
+        col = a[:, k]
+        m = ~np.isnan(col)
+        if m.sum() >= 2:
+            a[:, k] = np.interp(g, g[m], col[m])
+        elif m.sum() == 1:
+            a[:, k] = col[m][0]
+        else:
+            a[:, k] = 0.0
+    return a
+
+
+def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) -> int:
+    """击球瞬间(近似) = 前挥窗口内手腕"向前速度"最大的帧。
+
+    前挥窗口 = [引拍末端(手腕在挥击方向最靠后), 随挥(最靠前)]。
+    用图像坐标(可靠), facing 投影出"向前"方向, 避免引拍的反向快动作被误判。
+    纯姿态有 ~±0.4s 固有误差, 仅作自动起点, 由前端滑杆做绝对校正。
+    """
+    if facing is None:
+        facing = detect_facing(frames)
+    wr = R_WR if hand != "L" else L_WR
+    w = _img_track(frames, wr)
+    wx = _smooth(w[:, 0], 5)
+    T = len(frames)
+    fpos = facing * wx                       # 向挥击方向的位置
+    vf = facing * np.gradient(wx)            # 向挥击方向的速度
+    back = int(np.argmin(fpos[: max(2, int(T * 0.6))]))   # 引拍末端
+    fwd_end = int(np.argmax(fpos))                         # 随挥(最靠前)
+    if fwd_end <= back:
+        fwd_end = T - 1
+    seg = slice(back, fwd_end + 1)
+    return back + int(np.argmax(vf[seg]))
 
 
 def compute_metrics(signals: dict, contact: int) -> dict:
@@ -199,16 +237,20 @@ def _crop_signals(signals: dict, lo: int, hi: int) -> dict:
     }
 
 
-def analyze(data: dict, hand: str = "auto",
+def analyze(data: dict, hand: str = "auto", contact_override: int = None,
             pre_s: float = 1.0, post_s: float = 0.7) -> dict:
     """端到端: landmarks JSON → 挥拍窗口内的信号 + contact + 指标。
 
-    smart_cutter 切出的片段含准备与随挥; 我们以中部最快手腕峰为 contact,
-    取其前 pre_s 秒、后 post_s 秒为挥拍窗口, 在窗口内做时序与指标分析。
+    contact 默认用前挥"向前速度"峰自动检测; contact_override 不为 None 时
+    (前端滑杆校正后) 直接采用指定帧, 其余下游(裁窗/指标/对齐)随之重算。
     """
     world, valid, fps = load_world(data)
     full = compute_signals(world, fps, hand)
-    contact = detect_contact(full)                      # 全段帧索引
+    facing = detect_facing(data["frames"])
+    if contact_override is not None:
+        contact = int(max(0, min(world.shape[0] - 1, contact_override)))
+    else:
+        contact = detect_contact(data["frames"], fps, full["hand"], facing)
     lo = max(0, contact - int(round(pre_s * fps)))
     hi = min(world.shape[0], contact + int(round(post_s * fps)) + 1)
     signals = _crop_signals(full, lo, hi)
@@ -218,5 +260,5 @@ def analyze(data: dict, hand: str = "auto",
     metrics["contact_t"] = float(contact / fps)
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
-            "facing": detect_facing(data["frames"]),
+            "facing": facing, "n_frames": int(world.shape[0]),
             "metrics": metrics, "valid_ratio": float(valid.mean())}
