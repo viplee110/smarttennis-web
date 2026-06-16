@@ -86,6 +86,11 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
             contact_pose, ref["contact_pose_img"], mirror_user=mirror_user,
             user_world=uw, ref_world=ref.get("contact_pose_world"))
 
+    # 同步逐帧 scrubber: 用户沿统一相位轴的[帧+骨架]序列 (德约为预生成静态帧条)
+    scrub_user = shadow.scrub_strip(
+        video_path, landmarks["frames"], res["contact"],
+        res.get("loading_s", 1.0), float(landmarks.get("fps", 30.0)))
+
     scalar = {k: round(float(v), 3) for k, v in res["metrics"].items()
               if isinstance(v, (int, float)) and not isinstance(v, bool)}
     return {
@@ -96,6 +101,10 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
         "kinetic_chart": chart, "shadow_overlay": overlay,
         "user_contact": user_contact,
         "djokovic_contact": "/assets/djokovic_contact.jpg",
+        "scrub_user": scrub_user,
+        "scrub_djoko": [f"/assets/djoko_scrub/{i:02d}.jpg"
+                        for i in range(len(shadow.SCRUB_PHASES))],
+        "scrub_phases": shadow.SCRUB_PHASES,
     }
 
 

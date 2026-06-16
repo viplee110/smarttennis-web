@@ -154,6 +154,39 @@ def draw_skeleton_on_frame(frame_bgr: np.ndarray, pose_img, max_w: int = 900) ->
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
 
 
+# 同步 scrubber 的统一相位采样点 (τ: 0=击球, -1=前挥起点)。两人共用 → 帧一一对应。
+SCRUB_PHASES = [round(-1.0 + i * 0.075, 3) for i in range(21)]
+
+
+def scrub_strip(video_path: str, frames_lm, contact: int, loading_s: float,
+                fps: float, width: int = 240) -> list:
+    """沿统一相位轴生成 [真实帧+骨架] 缩略图序列(base64)。
+    用户(实时)与德约(预生成)用同一 SCRUB_PHASES → 同一索引即同一挥拍相位。"""
+    n = len(frames_lm)
+    cap = cv2.VideoCapture(video_path)
+    out = []
+    for tau in SCRUB_PHASES:
+        fi = int(round(contact + tau * loading_s * fps))
+        fi = max(0, min(n - 1, fi))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
+        ok, fr = cap.read()
+        if not ok:
+            out.append(None)
+            continue
+        pose_img = frames_lm[fi].get("img")
+        if not pose_img:                              # 糊帧就近取有效骨架
+            for d in range(1, 8):
+                for j in (fi - d, fi + d):
+                    if 0 <= j < n and frames_lm[j].get("img"):
+                        pose_img = frames_lm[j]["img"]
+                        break
+                if pose_img:
+                    break
+        out.append(draw_skeleton_on_frame(fr, pose_img, max_w=width) if pose_img else None)
+    cap.release()
+    return out
+
+
 def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
     """读取视频指定帧 (BGR)。"""
     cap = cv2.VideoCapture(video_path)

@@ -79,6 +79,12 @@
   .seqitem .tt{font-size:12px;color:var(--green);font-weight:600;margin-top:3px}
   .seqitem .rt{font-size:11px;color:var(--muted);margin-top:1px}
   .seqnote{font-size:12px;margin-top:8px;color:var(--muted);line-height:1.5}
+  .scrubRow{display:flex;gap:8px;margin-top:10px}
+  .scrubCol{flex:1;text-align:center}
+  .scrubCol img{width:100%;border-radius:10px;background:var(--bg);min-height:90px;object-fit:contain}
+  .scrubCol .cap{font-size:12px;color:var(--muted);margin-top:4px;font-weight:600}
+  .scrubSlider{width:100%;margin-top:12px;accent-color:var(--green)}
+  .scrubPhase{text-align:center;margin-top:6px;font-weight:600;color:var(--green)}
 </style>
 </head>
 <body>
@@ -144,6 +150,16 @@
       <h3>动力链时序</h3>
       <div class="sub">横轴=挥拍相位（0=击球，-1=前挥起点），两人已对齐可比。<b>怎么看</b>：看每种颜色的高峰从左到右的先后——髋(绿)、肩(蓝)应先冲高，手腕(红)最后；实线=你，虚线=德约。</div>
       <img id="chartImg" alt="动力链时序图">
+    </div>
+    <div class="card" id="scrubCard">
+      <h3>逐帧同步对比</h3>
+      <div class="sub">拖滑杆，你和德约按<b>同一挥拍相位</b>同步逐帧——引拍↔引拍、击球↔击球已对齐。亲眼看两人每个阶段的差别。</div>
+      <div class="scrubRow">
+        <div class="scrubCol"><img id="scrubUser" alt="你"><div class="cap">你</div></div>
+        <div class="scrubCol"><img id="scrubDjoko" alt="德约"><div class="cap">德约</div></div>
+      </div>
+      <input type="range" id="scrubSlider" class="scrubSlider" min="0" max="20" value="13">
+      <div class="scrubPhase" id="scrubPhase"></div>
     </div>
     <div class="card imgcard" id="overlayCard">
       <h3>影子对比（击球瞬间）</h3>
@@ -246,6 +262,24 @@ function paint(d){
   $("#chartImg").src=d.kinetic_chart;
   if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
   else $("#overlayCard").style.display="none";
+
+  // 同步逐帧 scrubber
+  const su=d.scrub_user||[], sd=d.scrub_djoko||[], sp=d.scrub_phases||[];
+  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider");
+  if(su.length && sd.length){
+    scrubCard.style.display="";
+    slr.max=su.length-1;
+    let ci=0,best=9; sp.forEach((v,i)=>{if(Math.abs(v)<best){best=Math.abs(v);ci=i;}});
+    slr.value=ci;
+    const upd=()=>{const i=+slr.value;
+      if(su[i])$("#scrubUser").src=su[i];
+      if(sd[i])$("#scrubDjoko").src=sd[i];
+      const ph=sp[i]!=null?sp[i]:0;
+      $("#scrubPhase").textContent=Math.abs(ph)<0.04?"⚡ 击球瞬间"
+        :(ph<0?`引拍/前挥中（击球前 ${Math.abs(ph).toFixed(2)}）`:`随挥（击球后 ${ph.toFixed(2)}）`);
+    };
+    slr.oninput=upd; upd();
+  } else scrubCard.style.display="none";
 
   const seq=d.report.sequencing||[], sc=$("#seqCard");
   seqList.innerHTML="";
