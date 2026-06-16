@@ -205,6 +205,27 @@ def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) ->
     return detect_swing(frames, fps, hand, facing)[0]
 
 
+def contact_point(world_contact, hand: str = "R") -> tuple:
+    """击球点(身体坐标系, 躯干为单位, 视角无关): 持拍手腕相对髋中心的
+    (前伸量, 高度)。用 3D world 推解剖坐标系 → 不受拍摄角度影响。
+    前伸>0=在身体前方; 高度>0=高于髋。"""
+    p = np.asarray(world_contact, dtype=float)[:, :3]
+    hip_c = (p[L_HIP] + p[R_HIP]) / 2.0
+    sh_c = (p[L_SH] + p[R_SH]) / 2.0
+    p = p - hip_c
+    right = p[R_HIP] - p[L_HIP]
+    right = right / (np.linalg.norm(right) + 1e-9)
+    up = sh_c - hip_c
+    up = up - np.dot(up, right) * right
+    up = up / (np.linalg.norm(up) + 1e-9)
+    fwd = np.cross(right, up)
+    fwd = fwd / (np.linalg.norm(fwd) + 1e-9)
+    scale = np.linalg.norm(sh_c - hip_c) or 1e-6
+    wr = p[R_WR] if hand != "L" else p[L_WR]
+    # 击球瞬间持拍手在身前, 取 |前伸| 使"越大=越靠前", 直观且与机位无关
+    return round(abs(float(wr @ fwd)) / scale, 3), round(float(wr @ up) / scale, 3)
+
+
 def compute_metrics(signals: dict, contact: int) -> dict:
     """提炼诊断指标 (与 demo 报告下排三图一致)。"""
     tarr = signals["t"]
@@ -287,6 +308,10 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     metrics["contact_t"] = float(contact / fps)
     # 发力链展开度归一化为相位 (节奏无关): 展开秒数 ÷ 装载时长
     metrics["seq_lead"] = round(metrics.pop("prox_lead_s", 0.0) / loading_s, 3)
+    # 击球点 (身体坐标系, 视角无关): 持拍手腕前伸量 / 高度
+    cfwd, chgt = contact_point(world[contact], full["hand"])
+    metrics["contact_forward"] = cfwd
+    metrics["contact_height"] = chgt
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
             "facing": facing, "n_frames": int(world.shape[0]),

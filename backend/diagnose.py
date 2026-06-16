@@ -21,8 +21,20 @@ METRIC_META = {
         "above": "肩髋分离偏大, 注意别过度扭转导致还原慢或腰部负担。",
         "below": "上下半身分离不足, 蓄力偏小。引拍时多转肩、稳住下盘, 制造更大的肩髋夹角来储能。",
     },
+    "contact_forward": {
+        "label": "击球点·前伸", "unit": "", "direction": "band",
+        "good": "击球点在身体前方的位置和德约接近, 能充分借上身体前送的力。",
+        "below": "击球点偏靠后(离身体太近) → 容易被球顶住、发不上力。让击球点更靠前, 早一点迎击。",
+        "above": "击球点过于靠前, 可能够不实、发力不稳, 注意触球时机。",
+    },
+    "contact_height": {
+        "label": "击球点·高度", "unit": "", "direction": "band",
+        "good": "击球高度和德约接近, 处在舒适发力区间。",
+        "below": "击球点偏低 → 多在腰部以下, 注意降重心、早准备, 或选更高的击球点。",
+        "above": "击球点偏高, 注意是否被高球顶到、影响上旋与稳定。",
+    },
 }
-ORDER = ["seq_lead", "xfactor_magnitude"]
+ORDER = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_height"]
 SEQ_LABELS = {"hip": "髋", "shoulder": "肩", "upper_arm": "上臂",
               "forearm": "前臂", "wrist": "手腕"}
 SEQ_ORDER = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]

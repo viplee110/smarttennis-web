@@ -13,7 +13,7 @@ import argparse, glob, json, os
 import numpy as np
 import kinetic_chain as kc
 
-METRIC_KEYS = ["seq_lead", "xfactor_magnitude"]
+METRIC_KEYS = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_height"]
 # 已人工验证的基准条 (用完整文件名精确匹配, 避免其他视频的同名 stroke_027 误覆盖)
 REF_STROKE = "Novak_Djokovic_Forehand_Slow_Motion__stroke_027"
 # 人工核对的真·触球帧: 自动检测给 130 (尚在拍头下降), 137 才是拍面触球。
