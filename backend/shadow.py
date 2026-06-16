@@ -105,6 +105,29 @@ def _normalize_skeleton(pose_img, mirror: bool = False) -> np.ndarray:
     return (p - hip_c) / scale
 
 
+def _project_canonical_sideview(world33) -> np.ndarray:
+    """world 3D 关节点 → 统一侧视(矢状面)的 2D 骨架, 与拍摄机位无关。
+
+    用解剖坐标系(右髋-左髋=左右轴, 髋→肩=躯干向上)推出'前方'=cross(右,上),
+    再投影到 (前方, 上) 平面 → 不管原视频是正侧/斜前拍, 都还原成同一虚拟侧视相机,
+    从根本上消除'骨架宽度不一致'。以躯干长归一化大小。
+    """
+    p = np.array(world33, dtype=float)[:, :3]
+    hip_c = (p[L_HIP] + p[R_HIP]) / 2.0
+    sh_c = (p[L_SH] + p[R_SH]) / 2.0
+    p = p - hip_c
+    right = p[R_HIP] - p[L_HIP]
+    right = right / (np.linalg.norm(right) + 1e-9)
+    up = sh_c - hip_c
+    up = up - np.dot(up, right) * right          # 对 right 正交化
+    up = up / (np.linalg.norm(up) + 1e-9)
+    forward = np.cross(right, up)
+    forward = forward / (np.linalg.norm(forward) + 1e-9)
+    xy = np.stack([p @ forward, p @ up], axis=1)  # x=前后, y=上下
+    scale = np.linalg.norm(sh_c - hip_c) or 1e-6
+    return xy / scale
+
+
 def _draw_skeleton(ax, pts, color, alpha=1.0, lw=2.2):
     for a, b in CONNECTIONS:
         ax.plot([pts[a, 0], pts[b, 0]], [pts[a, 1], pts[b, 1]],
@@ -140,12 +163,17 @@ def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
     return frame if ok else None
 
 
-def render_shadow_overlay(user_pose_img, ref_pose_img,
-                          mirror_user: bool = False) -> str:
+def render_shadow_overlay(user_pose_img, ref_pose_img, mirror_user: bool = False,
+                          user_world=None, ref_world=None) -> str:
     cjk = _use_cjk_font()
-    # mirror_user 由调用方按真实面朝方向决定 (机位左右相反 → 镜像用户以对齐)
-    user = _normalize_skeleton(user_pose_img, mirror=mirror_user)
-    ref = _normalize_skeleton(ref_pose_img)
+    # 优先用 3D world 做"视角归一化"侧视投影 (两人还原到同一虚拟相机, 消除机位差);
+    # 缺 3D 时回退到 2D 图像坐标(受拍摄角度影响)。
+    if user_world is not None and ref_world is not None:
+        user = _project_canonical_sideview(user_world)
+        ref = _project_canonical_sideview(ref_world)
+    else:
+        user = _normalize_skeleton(user_pose_img, mirror=mirror_user)
+        ref = _normalize_skeleton(ref_pose_img)
     fig, axes = plt.subplots(1, 3, figsize=(8.4, 3.4))
     titles = (["你 (击球瞬间)", "德约 (击球瞬间)", "叠加对比"] if cjk
               else ["You (contact)", "Djokovic (contact)", "Overlay"])

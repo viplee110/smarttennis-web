@@ -93,6 +93,8 @@ def _extract_reference_pose(data: dict, res: dict) -> dict:
         "stroke": REF_STROKE, "hand": s["hand"],
         "contact_frame": int(cf), "contact_local": int(res["contact_local"]),
         "contact_pose_img": [[round(p[0], 5), round(p[1], 5)] for p in img] if img else None,
+        "contact_pose_world": [[round(float(x), 5) for x in pt]
+                               for pt in res["world"][cf]],   # 3D, 供视角归一化叠加
         "ideal_curve": curve,
         "peak_times": res["metrics"].get("peak_times"),     # 德约各环节发力质心时刻
         "metrics": {k: round(float(res["metrics"][k]), 4) for k in METRIC_KEYS},

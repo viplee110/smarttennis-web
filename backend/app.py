@@ -78,10 +78,13 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
         user_contact = shadow.draw_skeleton_on_frame(frame, contact_pose)
 
     mirror_user = res.get("facing", 1.0) != REF_FACING
+    # 3D 视角归一化: 取用户/德约 contact 帧的 world 坐标, 还原同一侧视
+    uw = res["world"][contact_idx].tolist() if 0 <= contact_idx < len(res["world"]) else None
     overlay = None
     if contact_pose and ref.get("contact_pose_img"):
         overlay = shadow.render_shadow_overlay(
-            contact_pose, ref["contact_pose_img"], mirror_user=mirror_user)
+            contact_pose, ref["contact_pose_img"], mirror_user=mirror_user,
+            user_world=uw, ref_world=ref.get("contact_pose_world"))
 
     scalar = {k: round(float(v), 3) for k, v in res["metrics"].items()
               if isinstance(v, (int, float)) and not isinstance(v, bool)}
