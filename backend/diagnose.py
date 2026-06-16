@@ -82,9 +82,10 @@ def diagnose(user_metrics: dict, reference: dict) -> dict:
 
     # 发力顺序透明展示 (各环节峰值相对击球的时刻)
     pt = user_metrics.get("peak_times") or {}
-    sequencing = [{"seg": s, "label": SEQ_LABELS[s], "t": pt.get(s)}
+    rpt = (reference.get("reference", {}) or {}).get("peak_times") or {}
+    sequencing = [{"seg": s, "label": SEQ_LABELS[s],
+                   "t": pt.get(s), "ref_t": rpt.get(s)}
                   for s in SEQ_ORDER if pt.get(s) is not None]
-    sequence_ok = bool(user_metrics.get("sequence_ok", False))
 
     return {"score": score, "summary": summary, "items": items,
-            "sequencing": sequencing, "sequence_ok": sequence_ok}
+            "sequencing": sequencing}

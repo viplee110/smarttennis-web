@@ -76,10 +76,9 @@
   #seqList{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
   .seqitem{flex:1;min-width:54px;background:var(--bg);border-radius:10px;padding:8px 4px;text-align:center}
   .seqitem .nm{font-size:13px;font-weight:700;color:var(--ink)}
-  .seqitem .tt{font-size:12px;color:var(--muted);margin-top:2px}
-  .seqitem.bad{background:#fdeeee}
-  .seqnote{font-size:13px;margin-top:8px;font-weight:600}
-  .seqnote.ok{color:var(--green)}.seqnote.no{color:#c0392b}
+  .seqitem .tt{font-size:12px;color:var(--green);font-weight:600;margin-top:3px}
+  .seqitem .rt{font-size:11px;color:var(--muted);margin-top:1px}
+  .seqnote{font-size:12px;margin-top:8px;color:var(--muted);line-height:1.5}
 </style>
 </head>
 <body>
@@ -137,13 +136,13 @@
       </div>
     </div>
     <div class="card" id="seqCard">
-      <h3 style="margin:0 0 4px">发力顺序</h3>
-      <div class="sub">各环节发力峰值相对击球的时刻（负=更早）。理想：髋最先 → 手腕最后。这是上面动力链图的数字版。</div>
+      <h3 style="margin:0 0 4px">发力顺序：你 vs 德约</h3>
+      <div class="sub">每个部位发力最集中的时刻（相对击球，负=更早）。<b style="color:var(--green)">绿=你</b>，灰=德约。理想是髋最先、手腕最后依次发力。</div>
       <div id="seqList"></div>
     </div>
     <div class="card imgcard">
       <h3>动力链时序</h3>
-      <div class="sub">实线=你，虚线=德约；越靠右越接近击球。理想顺序：髋→肩→上臂→前臂→手腕。</div>
+      <div class="sub">横轴=挥拍相位（0=击球，-1=前挥起点），两人已对齐可比。<b>怎么看</b>：看每种颜色的高峰从左到右的先后——髋(绿)、肩(蓝)应先冲高，手腕(红)最后；实线=你，虚线=德约。</div>
       <img id="chartImg" alt="动力链时序图">
     </div>
     <div class="card imgcard" id="overlayCard">
@@ -250,14 +249,16 @@ function paint(d){
 
   const seq=d.report.sequencing||[], sc=$("#seqCard");
   seqList.innerHTML="";
+  const sgn=v=>(v>0?'+':'')+v+'s';
   seq.forEach(s=>seqList.insertAdjacentHTML("beforeend",
-    `<div class="seqitem"><div class="nm">${s.label}</div><div class="tt">${s.t>0?'+':''}${s.t}s</div></div>`));
+    `<div class="seqitem"><div class="nm">${s.label}</div>`+
+    `<div class="tt">${sgn(s.t)}</div>`+
+    `<div class="rt">德约 ${s.ref_t!=null?sgn(s.ref_t):'—'}</div></div>`));
   if(seq.length){sc.style.display="";
     let note=sc.querySelector(".seqnote");
     if(!note){note=document.createElement("div");note.className="seqnote";sc.appendChild(note);}
-    note.className="seqnote "+(d.report.sequence_ok?"ok":"no");
-    note.textContent=d.report.sequence_ok?"✓ 发力顺序正确（近端到远端依次发力）"
-      :"✗ 发力顺序紊乱：未按 髋→肩→上臂→前臂→手腕 依次发力";
+    // 不下"紊乱"硬判决: 25-30fps 下精细顺序不可靠, 只如实呈现, 由你自己对照
+    note.innerHTML="说明：手臂三段（上臂/前臂/手腕）峰值常相差不到一帧，普通手机帧率下难以精确分辨先后——所以这里只如实展示测到的时刻，<b>用慢动作(120/240fps)拍摄可显著提升精度</b>。";
   } else sc.style.display="none";
 
   const box=$("#metrics");box.innerHTML="";

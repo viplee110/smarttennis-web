@@ -94,6 +94,7 @@ def _extract_reference_pose(data: dict, res: dict) -> dict:
         "contact_frame": int(cf), "contact_local": int(res["contact_local"]),
         "contact_pose_img": [[round(p[0], 5), round(p[1], 5)] for p in img] if img else None,
         "ideal_curve": curve,
+        "peak_times": res["metrics"].get("peak_times"),     # 德约各环节发力质心时刻
         "metrics": {k: round(float(res["metrics"][k]), 4) for k in METRIC_KEYS},
     }
 
