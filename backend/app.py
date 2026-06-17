@@ -90,26 +90,12 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
             contact_pose, ref["contact_pose_img"], mirror_user=mirror_user,
             user_world=uw, ref_world=ref.get("contact_pose_world"))
 
-    # 同步逐帧 scrubber: DTW 把每个德约相位帧非线性对应到用户帧(全程一一对应),
-    # 失败则回退到线性相位映射。
-    ideal = ref.get("ideal_curve") or {}
+    # 同步逐帧 scrubber: 线性相位映射(每相位点=各自 contact + τ·loading)。
+    # 注: 曾试 DTW 非线性对应, 但它会按信号相似度 warp 掉用户的击球帧, 致逐帧不同步,
+    # 反而忠实度更差 → 回退线性, 让用户能扫到自己挥拍的每一帧。
     fps_u = float(landmarks.get("fps", 30.0))
-    try:
-        jmap = kc.dtw_ref_to_user(res["signals"]["norm"], ideal)
-        rt = ideal.get("t") or []
-        dj_load = float(ideal.get("loading_s") or 1.0)
-        user_lo = int(res["signals"]["window"][0])
-        nrm_len = len(res["signals"]["norm"]["wrist"])
-        uframes = []
-        for tau in shadow.SCRUB_PHASES:
-            tt = tau * dj_load
-            j = min(range(len(rt)), key=lambda k: abs(rt[k] - tt)) if rt else 0
-            i = jmap.get(j, int(round((j / max(1, len(rt) - 1)) * (nrm_len - 1))))
-            uframes.append(user_lo + int(i))
-        scrub_user = shadow.scrub_strip_at(video_path, landmarks["frames"], uframes)
-    except Exception:
-        scrub_user = shadow.scrub_strip(
-            video_path, landmarks["frames"], res["contact"], res.get("loading_s", 1.0), fps_u)
+    scrub_user = shadow.scrub_strip(
+        video_path, landmarks["frames"], res["contact"], res.get("loading_s", 1.0), fps_u)
 
     scalar = {k: round(float(v), 3) for k, v in res["metrics"].items()
               if isinstance(v, (int, float)) and not isinstance(v, bool)}
