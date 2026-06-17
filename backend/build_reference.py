@@ -14,6 +14,11 @@ import numpy as np
 import kinetic_chain as kc
 
 METRIC_KEYS = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_height"]
+# 体检发现: 时序类(seq_lead)跨机位稳→多源合并; 空间/角度类受机位影响大→只用单一侧面机位,
+# 否则混源绿带等于"会随角度变形的尺子"。CANONICAL_SRC = 那条干净侧面机位(stroke_027 的来源)。
+POOLED_KEYS = ["seq_lead"]
+CANONICAL_KEYS = ["xfactor_magnitude", "contact_forward", "contact_height"]
+CANONICAL_SRC = "Novak_Djokovic_Forehand_Slow_Motion"
 # 已人工验证的基准条 (用完整文件名精确匹配, 避免其他视频的同名 stroke_027 误覆盖)
 REF_STROKE = "Novak_Djokovic_Forehand_Slow_Motion__stroke_027"
 # 人工核对的真·触球帧: 自动检测给 130 (尚在拍头下降), 137 才是拍面触球。
@@ -45,8 +50,12 @@ def build(src_dir: str, out_path: str) -> dict:
         if res["valid_ratio"] < 0.8 or len(data["frames"]) < 30:
             continue                                  # 检测质量差/太短的丢弃
         m = res["metrics"]
-        for k in METRIC_KEYS:
+        src = os.path.basename(fp).split("__stroke")[0]
+        for k in POOLED_KEYS:                 # 时序类: 全机位合并(稳)
             samples[k].append(m[k])
+        if src == CANONICAL_SRC:              # 空间类: 仅单一侧面机位(避免机位漂移)
+            for k in CANONICAL_KEYS:
+                samples[k].append(m[k])
         used += 1
 
         if os.path.splitext(os.path.basename(fp))[0] == REF_STROKE:
