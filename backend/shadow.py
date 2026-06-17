@@ -75,6 +75,16 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
         x0 = -1.4 + i * 0.42
         ax.scatter([x0], [1.62], s=70, color=c, edgecolors="white", linewidths=1)
         ax.text(x0 + 0.05, 1.62, zh if cjk else k[:2], va="center", fontsize=9, color="#333")
+    # 防误读: 用户各环节若挤在 ~3帧内(低于手机帧率分辨率), 精确先后是噪声 → 明确警示
+    uvals = [user_pt.get(k) for k, _zh, _c in _SEG_STYLE if user_pt.get(k) is not None]
+    if len(uvals) >= 3 and (max(uvals) - min(uvals)) < 0.10:
+        lo_x, hi_x = min(uvals) / du, max(uvals) / du
+        ax.axvspan(lo_x - 0.04, hi_x + 0.04, ymin=0.62, ymax=0.82,
+                   color="#c0392b", alpha=0.10, zorder=0)
+        ax.annotate("⚠ 挤在一起·精确先后是帧率噪声，别细究排名" if cjk
+                    else "bunched: order unreliable",
+                    ((lo_x + hi_x) / 2, 1.0), xytext=(0.62, 1.18),
+                    ha="center", fontsize=8.5, color="#c0392b", fontweight="bold")
     ax.axvline(0, ls="--", color="gray", lw=1)
     ax.text(-1.5, -0.62, "← 越靠左=越早发力；点拉得越开=发力链越依次展开(德约式)" if cjk
             else "← earlier; more spread = better chain", ha="left", fontsize=8.5, color="#888")
