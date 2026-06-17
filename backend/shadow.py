@@ -202,8 +202,9 @@ def draw_skeleton_on_frame(frame_bgr: np.ndarray, pose_img, max_w: int = 900) ->
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
 
 
-# 同步 scrubber 的统一相位采样点 (τ: 0=击球, -1=前挥起点)。两人共用 → 帧一一对应。
-SCRUB_PHASES = [round(-1.0 + i * 0.075, 3) for i in range(21)]
+# 同步 scrubber 的统一相位采样点 (τ: 0=击球, -1≈前挥起点)。两人共用 → 帧一一对应。
+# 必须精确包含 τ=0(索引13): 使 scrubber 的"击球"帧 == 静态击球图帧 == REF_CONTACT, 永远一致。
+SCRUB_PHASES = [round(-0.975 + i * 0.075, 3) for i in range(21)]   # -0.975..+0.525, 0 在索引13
 
 
 def _nearest_img(frames_lm, fi, n):

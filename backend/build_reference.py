@@ -18,7 +18,7 @@ METRIC_KEYS = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_heig
 REF_STROKE = "Novak_Djokovic_Forehand_Slow_Motion__stroke_027"
 # 人工核对的真·触球帧: 自动检测给 130 (尚在拍头下降), 137 才是拍面触球。
 # 仅用于参考姿态/理想曲线的锚点; 绿带统计仍用各条自动 contact 保持一致。
-REF_CONTACT = 142   # 真·拍面触球(人工反复核对; 130/137/140 仍偏早. 精确到帧需离线球拍/球检测)
+REF_CONTACT = 144   # 真·拍面触球(逐帧肉眼定: 142球未到拍面/144球在拍面/146球已击出)
 
 
 def _iqr(vals: list[float]) -> dict:
