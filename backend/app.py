@@ -70,6 +70,10 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
     chart = shadow.render_kinetic_chart(
         res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"),
         user_loading_s=res.get("loading_s", 0.0))
+    # 极简发力时间轴 (主视觉, 比5曲线直观)
+    seq_chart = shadow.render_sequence_timeline(
+        res["metrics"].get("peak_times") or {}, ref.get("peak_times") or {},
+        res.get("loading_s", 1.0), (ref.get("ideal_curve") or {}).get("loading_s", 1.0))
 
     contact_idx, contact_pose = _nearest_pose(landmarks["frames"], res["contact"])
     user_contact = None
@@ -114,7 +118,7 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
         "valid_ratio": round(res["valid_ratio"], 3),
         "contact": int(res["contact"]), "n_frames": int(res.get("n_frames") or 0),
         "metrics": scalar, "report": report,
-        "kinetic_chart": chart, "shadow_overlay": overlay,
+        "kinetic_chart": chart, "sequence_chart": seq_chart, "shadow_overlay": overlay,
         "user_contact": user_contact,
         "djokovic_contact": "/assets/djokovic_contact.jpg",
         "scrub_user": scrub_user,

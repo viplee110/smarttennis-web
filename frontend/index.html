@@ -147,9 +147,14 @@
       <div id="seqList"></div>
     </div>
     <div class="card imgcard">
-      <h3>动力链时序</h3>
-      <div class="sub">横轴=挥拍相位（0=击球，-1=前挥起点），两人已对齐可比。<b>怎么看</b>：看每种颜色的高峰从左到右的先后——髋(绿)、肩(蓝)应先冲高，手腕(红)最后；实线=你，虚线=德约。</div>
-      <img id="chartImg" alt="动力链时序图">
+      <h3>发力时间轴：你 vs 德约</h3>
+      <div class="sub">每个部位一个点 = 它发力最集中的时刻。<b>越靠左=越早</b>；<b>点拉得越开 = 发力链越依次展开</b>（德约式）。你的点若挤在击球附近，说明发力太集中、偏"用手臂打"。</div>
+      <img id="seqChartImg" alt="发力时间轴">
+      <details style="margin-top:10px">
+        <summary class="sub" style="cursor:pointer;color:var(--green);font-weight:600">▸ 进阶：完整动力链速度曲线</summary>
+        <div class="sub" style="margin-top:6px">横轴=挥拍相位（0=击球，-1=前挥起点），DTW 对齐。实线=你，虚线=德约；看每色高峰从左到右先后。曲线密集是专业视角，看上面时间轴即可。</div>
+        <img id="chartImg" alt="动力链时序图" style="margin-top:6px">
+      </details>
     </div>
     <div class="card" id="scrubCard">
       <h3>逐帧同步对比</h3>
@@ -259,6 +264,7 @@ function paint(d){
     $("#contactCard").style.display="";}
   else $("#contactCard").style.display="none";
   cstatus.textContent="当前击球帧：第 "+d.contact+" 帧";
+  if(d.sequence_chart)$("#seqChartImg").src=d.sequence_chart;
   $("#chartImg").src=d.kinetic_chart;
   if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
   else $("#overlayCard").style.display="none";
