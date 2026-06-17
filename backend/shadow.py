@@ -27,11 +27,16 @@ SIGNAL_STYLE = [
 ]
 
 
-def _fig_to_b64(fig) -> str:
+def _fig_to_b64(fig, tight: bool = True) -> str:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=110, bbox_inches=("tight" if tight else None))
     plt.close(fig)
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+# 发力时间轴的固定坐标轴(不裁剪), 让前端能按相位在图上精确画"当前帧"竖线。
+# left/right = 绘图区占整张图宽度的比例; xmin/xmax = 相位轴范围。两者须与 render 一致。
+SEQ_AXIS = {"xmin": -1.65, "xmax": 0.72, "left": 0.13, "right": 0.97}
 
 
 def _use_cjk_font():
@@ -59,7 +64,9 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
     cjk = _use_cjk_font()
     du = user_loading if user_loading and user_loading > 1e-3 else 1.0
     dr = ref_loading if ref_loading and ref_loading > 1e-3 else 1.0
+    xmin = SEQ_AXIS["xmin"]
     fig, ax = plt.subplots(figsize=(7.2, 2.9))
+    fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.20)
     rows = [(1.0, "你" if cjk else "You", user_pt, du),
             (0.0, "德约" if cjk else "Djokovic", ref_pt, dr)]
     for y, name, pt, load in rows:
@@ -69,7 +76,7 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
         ax.plot(xs, [y] * len(xs), color="#cfd8d3", lw=2, zorder=1)   # 连线=发力链展开
         for (k, zh, c), x in zip(_SEG_STYLE, xs):
             ax.scatter([x], [y], s=150, color=c, zorder=3, edgecolors="white", linewidths=1.4)
-        ax.text(-1.5, y, name, ha="right", va="center", fontsize=12, fontweight="bold")
+        ax.text(xmin + 0.04, y, name, ha="left", va="center", fontsize=12, fontweight="bold")
     # 顶部色例 (替代逐点标签, 避免点挤时重叠)
     for i, (k, zh, c) in enumerate(_SEG_STYLE):
         x0 = -1.4 + i * 0.42
@@ -86,13 +93,13 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
                     ((lo_x + hi_x) / 2, 1.0), xytext=(0.62, 1.18),
                     ha="center", fontsize=8.5, color="#c0392b", fontweight="bold")
     ax.axvline(0, ls="--", color="gray", lw=1)
-    ax.text(-1.5, -0.62, "← 越靠左=越早发力；点拉得越开=发力链越依次展开(德约式)" if cjk
+    ax.text(xmin + 0.04, -0.62, "← 越靠左=越早发力；点拉得越开=发力链越依次展开(德约式)" if cjk
             else "← earlier; more spread = better chain", ha="left", fontsize=8.5, color="#888")
-    ax.set_xlim(-1.6, 0.7); ax.set_ylim(-0.8, 1.8)
+    ax.set_xlim(xmin, SEQ_AXIS["xmax"]); ax.set_ylim(-0.8, 1.8)
     ax.set_yticks([]); ax.set_xlabel("挥拍相位 (0=击球)" if cjk else "swing phase (0=contact)", fontsize=9)
     for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
-    return _fig_to_b64(fig)
+    return _fig_to_b64(fig, tight=False)   # 固定边距 → 前端可精确定位竖线
 
 
 def render_kinetic_chart(signals: dict, contact_t: float,

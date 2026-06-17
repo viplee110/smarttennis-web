@@ -85,6 +85,9 @@
   .scrubCol .cap{font-size:12px;color:var(--muted);margin-top:4px;font-weight:600}
   .scrubSlider{width:100%;margin-top:12px;accent-color:var(--green)}
   .scrubPhase{text-align:center;margin-top:6px;font-weight:600;color:var(--green)}
+  .seqwrap{position:relative;line-height:0}
+  .seqwrap img{width:100%}
+  .seqline{position:absolute;top:6%;bottom:20%;width:2px;background:var(--green);opacity:0;transition:opacity .15s;pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
 </style>
 </head>
 <body>
@@ -149,7 +152,7 @@
     <div class="card imgcard">
       <h3>发力时间轴：你 vs 德约</h3>
       <div class="sub">每个部位一个点 = 它发力最集中的时刻。<b>越靠左=越早</b>；<b>点拉得越开 = 发力链越依次展开</b>（德约式）。你的点若挤在击球附近，说明发力太集中、偏"用手臂打"。<br><b style="color:#c0392b">注意</b>：各部位<b>挤在一起时别纠结精确先后</b>——手机帧率分不清 2 帧内的顺序，只看<b>你(挤) vs 德约(散)</b>的整体差异。慢动作(120/240fps)拍可让精确顺序变可信。</div>
-      <img id="seqChartImg" alt="发力时间轴">
+      <div class="seqwrap"><img id="seqChartImg" alt="发力时间轴"><div class="seqline" id="seqLine"></div></div>
       <details style="margin-top:10px">
         <summary class="sub" style="cursor:pointer;color:var(--green);font-weight:600">▸ 进阶：完整动力链速度曲线</summary>
         <div class="sub" style="margin-top:6px">横轴=挥拍相位（0=击球，-1=前挥起点），DTW 对齐。实线=你，虚线=德约；看每色高峰从左到右先后。曲线密集是专业视角，看上面时间轴即可。</div>
@@ -270,8 +273,8 @@ function paint(d){
   else $("#overlayCard").style.display="none";
 
   // 同步逐帧 scrubber
-  const su=d.scrub_user||[], sd=d.scrub_djoko||[], sp=d.scrub_phases||[];
-  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider");
+  const su=d.scrub_user||[], sd=d.scrub_djoko||[], sp=d.scrub_phases||[], ax=d.seq_axis;
+  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider"), seqLine=$("#seqLine");
   if(su.length && sd.length){
     scrubCard.style.display="";
     slr.max=su.length-1;
@@ -283,9 +286,12 @@ function paint(d){
       const ph=sp[i]!=null?sp[i]:0;
       $("#scrubPhase").textContent=Math.abs(ph)<0.04?"⚡ 击球瞬间"
         :(ph<0?`引拍/前挥中（击球前 ${Math.abs(ph).toFixed(2)}）`:`随挥（击球后 ${ph.toFixed(2)}）`);
+      // 同步竖线: 把当前相位映射到上方动力链图的像素x → 一眼看到"此刻在曲线哪段"
+      if(ax){const f=ax.left+(ph-ax.xmin)/(ax.xmax-ax.xmin)*(ax.right-ax.left);
+        seqLine.style.left=(f*100).toFixed(1)+"%"; seqLine.style.opacity=1;}
     };
     slr.oninput=upd; upd();
-  } else scrubCard.style.display="none";
+  } else {scrubCard.style.display="none"; if(seqLine)seqLine.style.opacity=0;}
 
   const seq=d.report.sequencing||[], sc=$("#seqCard");
   seqList.innerHTML="";
