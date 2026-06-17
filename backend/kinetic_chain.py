@@ -205,6 +205,43 @@ def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) ->
     return detect_swing(frames, fps, hand, facing)[0]
 
 
+def dtw_path(a: np.ndarray, b: np.ndarray) -> list:
+    """两条多维时间序列 a(N,D)、b(M,D) 的 DTW 非线性对齐路径 [(i,j)...]。
+    用于把用户与德约的挥拍逐帧对应(引拍↔引拍/击球↔击球/随挥↔随挥), 跨节奏。
+    仅用于可视化/对应, 不用于打分(DTW 会 warp 掉要测的时序差异)。"""
+    a = np.asarray(a, float); b = np.asarray(b, float)
+    N, M = len(a), len(b)
+    cost = np.linalg.norm(a[:, None, :] - b[None, :, :], axis=2)   # (N,M)
+    acc = np.full((N + 1, M + 1), np.inf)
+    acc[0, 0] = 0.0
+    for i in range(1, N + 1):
+        for j in range(1, M + 1):
+            acc[i, j] = cost[i - 1, j - 1] + min(acc[i - 1, j], acc[i, j - 1], acc[i - 1, j - 1])
+    i, j, path = N, M, []
+    while i > 0 and j > 0:
+        path.append((i - 1, j - 1))
+        c = min(acc[i - 1, j - 1], acc[i - 1, j], acc[i, j - 1])
+        if acc[i - 1, j - 1] == c:
+            i, j = i - 1, j - 1
+        elif acc[i - 1, j] == c:
+            i -= 1
+        else:
+            j -= 1
+    return path[::-1]
+
+
+def dtw_ref_to_user(user_norm: dict, ref_curve: dict) -> dict:
+    """返回 {德约窗口内索引 j: 对应的用户窗口内索引 i}。
+    特征 = 5 环节归一化速度向量(逐帧)。德约用 ideal_curve 的(可能下采样)序列。"""
+    keys = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]
+    ua = np.stack([np.asarray(user_norm[k], float) for k in keys], axis=1)
+    rb = np.stack([np.asarray(ref_curve[k], float) for k in keys], axis=1)
+    jmap = {}
+    for i, j in dtw_path(ua, rb):
+        jmap.setdefault(j, i)            # 每个德约帧取首个对应用户帧
+    return jmap
+
+
 def contact_point(world_contact, hand: str = "R") -> tuple:
     """击球点(身体坐标系, 躯干为单位, 视角无关): 持拍手腕相对髋中心的
     (前伸量, 高度)。用 3D world 推解剖坐标系 → 不受拍摄角度影响。

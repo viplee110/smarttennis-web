@@ -158,33 +158,39 @@ def draw_skeleton_on_frame(frame_bgr: np.ndarray, pose_img, max_w: int = 900) ->
 SCRUB_PHASES = [round(-1.0 + i * 0.075, 3) for i in range(21)]
 
 
-def scrub_strip(video_path: str, frames_lm, contact: int, loading_s: float,
-                fps: float, width: int = 240) -> list:
-    """沿统一相位轴生成 [真实帧+骨架] 缩略图序列(base64)。
-    用户(实时)与德约(预生成)用同一 SCRUB_PHASES → 同一索引即同一挥拍相位。"""
+def _nearest_img(frames_lm, fi, n):
+    pose_img = frames_lm[fi].get("img")
+    if not pose_img:
+        for d in range(1, 8):
+            for j in (fi - d, fi + d):
+                if 0 <= j < n and frames_lm[j].get("img"):
+                    return frames_lm[j]["img"]
+    return pose_img
+
+
+def scrub_strip_at(video_path: str, frames_lm, frame_indices, width: int = 240) -> list:
+    """按给定帧索引列表生成 [真实帧+骨架] 缩略图序列(base64)。"""
     n = len(frames_lm)
     cap = cv2.VideoCapture(video_path)
     out = []
-    for tau in SCRUB_PHASES:
-        fi = int(round(contact + tau * loading_s * fps))
-        fi = max(0, min(n - 1, fi))
+    for fi in frame_indices:
+        fi = max(0, min(n - 1, int(fi)))
         cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
         ok, fr = cap.read()
         if not ok:
             out.append(None)
             continue
-        pose_img = frames_lm[fi].get("img")
-        if not pose_img:                              # 糊帧就近取有效骨架
-            for d in range(1, 8):
-                for j in (fi - d, fi + d):
-                    if 0 <= j < n and frames_lm[j].get("img"):
-                        pose_img = frames_lm[j]["img"]
-                        break
-                if pose_img:
-                    break
+        pose_img = _nearest_img(frames_lm, fi, n)
         out.append(draw_skeleton_on_frame(fr, pose_img, max_w=width) if pose_img else None)
     cap.release()
     return out
+
+
+def scrub_strip(video_path: str, frames_lm, contact: int, loading_s: float,
+                fps: float, width: int = 240) -> list:
+    """沿统一相位轴(SCRUB_PHASES, 线性)生成帧条。德约预生成静态条用它。"""
+    idx = [int(round(contact + tau * loading_s * fps)) for tau in SCRUB_PHASES]
+    return scrub_strip_at(video_path, frames_lm, idx, width)
 
 
 def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
