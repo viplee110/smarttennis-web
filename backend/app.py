@@ -36,6 +36,20 @@ _ref_cp = REFERENCE["reference"].get("contact_pose_img")
 REF_FACING = kc.detect_facing([{"img": _ref_cp}]) if _ref_cp else 1.0
 
 
+def _asset_ver() -> str:
+    """德约静态图内容哈希, 作为资源URL版本号 → 图一变就强制浏览器重新下载,
+    根治'重新生成了同名图但手机Safari仍显示旧缓存'的问题。"""
+    import hashlib
+    try:
+        with open(os.path.join(FRONTEND, "assets", "djokovic_contact.jpg"), "rb") as fh:
+            return hashlib.md5(fh.read()).hexdigest()[:8]
+    except OSError:
+        return "1"
+
+
+ASSET_VER = _asset_ver()
+
+
 def _nearest_pose(frames, idx, radius=10):
     """从 idx 向两侧找最近一个检测到人体的帧 (避免击球糊帧没骨架)。"""
     n = len(frames)
@@ -106,9 +120,9 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
         "metrics": scalar, "report": report,
         "kinetic_chart": chart, "sequence_chart": seq_chart, "shadow_overlay": overlay,
         "user_contact": user_contact,
-        "djokovic_contact": "/assets/djokovic_contact.jpg",
+        "djokovic_contact": f"/assets/djokovic_contact.jpg?v={ASSET_VER}",
         "scrub_user": scrub_user,
-        "scrub_djoko": [f"/assets/djoko_scrub/{i:02d}.jpg"
+        "scrub_djoko": [f"/assets/djoko_scrub/{i:02d}.jpg?v={ASSET_VER}"
                         for i in range(len(shadow.SCRUB_PHASES))],
         "scrub_phases": shadow.SCRUB_PHASES,
     }
