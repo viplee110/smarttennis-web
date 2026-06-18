@@ -287,5 +287,7 @@ async def recompute(token: str = Form(...), contact: int = Form(-1),
 if os.path.isdir(FRONTEND):
     @app.get("/")
     def index():
-        return FileResponse(os.path.join(FRONTEND, "index.html"))
+        # no-cache: 每次部署后手机刷新一定拿到最新页面 (根治"重新部署了却还显示旧界面")
+        return FileResponse(os.path.join(FRONTEND, "index.html"),
+                            headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     app.mount("/", StaticFiles(directory=FRONTEND), name="static")
