@@ -205,6 +205,72 @@ def detect_contact(frames, fps: float, hand: str = "R", facing: float = None) ->
     return detect_swing(frames, fps, hand, facing)[0]
 
 
+def _fwd_track(frames, hand: str, facing: float):
+    """持拍手腕"向挥击方向"的位置 fpos 与速度 vf (图像坐标 x, 平滑后)。"""
+    wr = R_WR if hand != "L" else L_WR
+    wx = _smooth(_img_track(frames, wr)[:, 0], 5)
+    return facing * wx, facing * np.gradient(wx)
+
+
+def detect_swing_multiple(frames, fps: float, hand: str = "R",
+                          facing: float = None, max_n: int = 6) -> list:
+    """从一段(可能含多次挥拍/杂内容)的视频里找出多个候选挥拍。
+    返回 [{swing_start, contact, end, vf}, ...] 全段帧索引, 按时间排序。
+
+    判据: 持拍手腕"向挥击方向速度"的局部峰(每峰≈一次击球), 阈值(最强峰的45%)
+    + 最小间隔(1.2s)去抖(太近只留更强的); 每峰前 2s 内找手腕最靠后处=引拍起点,
+    峰后(到下一个峰之前)找最靠前处=随挥终点。纯姿态, 误差~±0.4s, 仅作候选由前端校正。"""
+    if facing is None:
+        facing = detect_facing(frames)
+    T = len(frames)
+    if T < 5:
+        return []
+    fpos, vf = _fwd_track(frames, hand, facing)
+    vmax = float(np.max(vf))
+    if vmax <= 0:                                  # 无明显前挥 → 退回单挥拍
+        c, s = detect_swing(frames, fps, hand, facing)
+        return [{"swing_start": int(s), "contact": int(c),
+                 "end": int(min(T - 1, c + int(round(0.8 * fps)))), "vf": 0.0}]
+    thr = 0.45 * vmax
+    gap = max(1, int(round(1.2 * fps)))
+
+    def _is_peak(i):                               # 含边界: 第0/末帧用单侧比较, 不漏裁太紧的击球
+        left = vf[i - 1] if i > 0 else -np.inf
+        right = vf[i + 1] if i < T - 1 else -np.inf
+        return vf[i] >= thr and vf[i] >= left and vf[i] >= right
+
+    peaks: list[int] = []
+    for i in range(T):
+        if _is_peak(i):
+            if peaks and i - peaks[-1] < gap:
+                if vf[i] > vf[peaks[-1]]:
+                    peaks[-1] = i                  # 太近只保留更强的峰
+            else:
+                peaks.append(i)
+    if not peaks:
+        peaks = [int(np.argmax(vf))]
+    out = []
+    for k, pk in enumerate(peaks[:max_n]):
+        contact = int(pk)
+        lo_w = max(0, contact - int(round(2.0 * fps)))
+        swing_start = (lo_w + int(np.argmin(fpos[lo_w:contact + 1]))) if contact > lo_w else lo_w
+        nxt = peaks[k + 1] if k + 1 < len(peaks) else T - 1
+        hi_w = min(T - 1, min(nxt, contact + int(round(1.2 * fps))))
+        end = (contact + int(np.argmax(fpos[contact:hi_w + 1]))) if hi_w > contact else min(T - 1, contact + 1)
+        out.append({"swing_start": int(swing_start), "contact": contact,
+                    "end": int(end), "vf": float(vf[contact])})
+    return out
+
+
+def _contact_in_range(frames, fps: float, hand: str, facing: float, lo: int, hi: int) -> int:
+    """在 [lo,hi) 区间内找"向挥击方向速度"峰作为 contact (片段被选定后用)。"""
+    fpos, vf = _fwd_track(frames, hand, facing)
+    lo = max(0, int(lo)); hi = min(len(frames), int(hi))
+    if hi - lo < 2:
+        return lo
+    return lo + int(np.argmax(vf[lo:hi]))
+
+
 def dtw_path(a: np.ndarray, b: np.ndarray) -> list:
     """两条多维时间序列 a(N,D)、b(M,D) 的 DTW 非线性对齐路径 [(i,j)...]。
     用于把用户与德约的挥拍逐帧对应(引拍↔引拍/击球↔击球/随挥↔随挥), 跨节奏。
@@ -317,27 +383,38 @@ def _crop_signals(signals: dict, lo: int, hi: int) -> dict:
 
 
 def analyze(data: dict, hand: str = "auto", contact_override: int = None,
-            pre_s: float = 1.0, post_s: float = 0.7) -> dict:
+            seg: tuple = None, pre_s: float = 1.0, post_s: float = 0.7) -> dict:
     """端到端: landmarks JSON → 挥拍窗口内的信号 + contact + 指标。
 
     contact 默认用前挥"向前速度"峰自动检测; contact_override 不为 None 时
     (前端滑杆校正后) 直接采用指定帧, 其余下游(裁窗/指标/对齐)随之重算。
+    seg=(lo,hi) 不为 None 时(用户选定/自动切出的挥拍片段): 引拍起点取 seg_lo,
+    contact 在该区间内自动找(或用 contact_override), 裁窗钳制在区间内 → 长视频/多挥拍可靠。
     """
     world, valid, fps = load_world(data)
     full = compute_signals(world, fps, hand)
     facing = detect_facing(data["frames"])
-    auto_contact, swing_start = detect_swing(data["frames"], fps, full["hand"], facing)
-    if contact_override is not None:
-        contact = int(max(0, min(world.shape[0] - 1, contact_override)))
+    n = world.shape[0]
+    if seg is not None:
+        seg_lo = int(max(0, min(n - 1, seg[0])))
+        seg_hi = int(max(seg_lo + 1, min(n, int(seg[1]) + 1)))      # 转为 [lo,hi) 半开
+        swing_start = seg_lo
+        if contact_override is not None:
+            contact = int(np.clip(contact_override, seg_lo, seg_hi - 1))
+        else:
+            contact = _contact_in_range(data["frames"], fps, full["hand"], facing, seg_lo, seg_hi)
+        bound_lo, bound_hi = seg_lo, seg_hi
     else:
-        contact = auto_contact
+        auto_contact, swing_start = detect_swing(data["frames"], fps, full["hand"], facing)
+        contact = int(max(0, min(n - 1, contact_override))) if contact_override is not None else auto_contact
+        bound_lo, bound_hi = 0, n
     # 装载时长 = 前挥起点→击球, 用于相位归一化对齐 (跨节奏可比)
     loading_s = max((contact - swing_start) / fps, 1e-3)
     # 裁窗按 loading 成比例 (而非固定秒), 使不同节奏的人覆盖同一相位区间 ≈[-1.4, +0.6]
     pre_s = float(np.clip(1.4 * loading_s, 0.7, 3.0))
     post_s = float(np.clip(0.6 * loading_s, 0.4, 1.5))
-    lo = max(0, contact - int(round(pre_s * fps)))
-    hi = min(world.shape[0], contact + int(round(post_s * fps)) + 1)
+    lo = max(bound_lo, contact - int(round(pre_s * fps)))
+    hi = min(bound_hi, contact + int(round(post_s * fps)) + 1)
     signals = _crop_signals(full, lo, hi)
     local_contact = contact - lo                        # 窗口内索引
     metrics = compute_metrics(signals, local_contact)

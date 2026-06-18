@@ -88,12 +88,21 @@
   .seqwrap{position:relative;line-height:0}
   .seqwrap img{width:100%}
   .seqline{position:absolute;top:6%;bottom:20%;width:2px;background:var(--green);opacity:0;transition:opacity .15s;pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
+  .swingrow{display:flex;gap:8px;overflow-x:auto;padding:6px 0;margin-top:8px}
+  .swingcard{flex:0 0 auto;width:92px;text-align:center;cursor:pointer;border:2px solid transparent;border-radius:10px;padding:3px;background:var(--bg)}
+  .swingcard.on{border-color:var(--green)}
+  .swingcard img{width:100%;border-radius:8px;display:block;min-height:48px;object-fit:cover}
+  .swingcard .cap{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.25}
+  .segrow{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .segrow .seglab{flex:0 0 60px;font-size:12px;font-weight:600;color:var(--muted)}
+  .segrow .segthumb{flex:0 0 84px;height:52px;object-fit:cover;border-radius:8px;background:var(--bg)}
+  .segrow .cslider{flex:1;margin:0}
 </style>
 </head>
 <body>
 <header>
   <h1>🎾 SmartTennis</h1>
-  <p>上传 10 秒正手视频，对照德约动力链</p>
+  <p>上传正手视频（≤30 秒，可含多次挥拍），对照德约动力链</p>
 </header>
 
 <div class="wrap">
@@ -115,7 +124,7 @@
     <button class="btn secondary" id="pickBtn">🖼 从相册/文件选择视频</button>
     <div id="fileName"></div>
     <button class="btn" id="analyzeBtn" style="display:none">开始分析</button>
-    <div class="hint">建议：侧面机位、单人入镜、把击球瞬间放在视频中段。10 秒以内最佳。</div>
+    <div class="hint">建议：侧面机位、单人入镜。视频 ≤30 秒；可含多次挥拍，分析时再选要测的那一拍。</div>
     <div class="err" id="err"></div>
   </div>
 
@@ -130,6 +139,17 @@
         <div class="scorenum" id="score">0<small>/100</small></div>
         <div class="summary" id="summary"></div>
       </div>
+    </div>
+    <div class="card" id="segCard" style="display:none">
+      <h3>选择挥拍片段</h3>
+      <div class="sub" id="segHint"></div>
+      <div class="swingrow" id="swingList"></div>
+      <details id="segManual" style="margin-top:6px">
+        <summary class="sub" style="cursor:pointer;color:var(--green);font-weight:600">▸ 手动调整起点(引拍)/终点(收拍)</summary>
+        <div class="segrow"><div class="seglab">起点·引拍</div><img id="segStartImg" class="segthumb" alt="起点"><input type="range" id="segStart" class="cslider"></div>
+        <div class="segrow"><div class="seglab">终点·收拍</div><img id="segEndImg" class="segthumb" alt="终点"><input type="range" id="segEnd" class="cslider"></div>
+        <div class="cstatus" id="segStatus"></div>
+      </details>
     </div>
     <div class="card imgcard" id="contactCard">
       <h3>击球瞬间</h3>
@@ -192,7 +212,10 @@ const camInput=$("#camInput"), fileInput=$("#fileInput"),
       fileName=$("#fileName"), spinner=$("#spinner"), result=$("#result"),
       uploadCard=$("#uploadCard"), err=$("#err"),
       contactSlider=$("#contactSlider"), cstatus=$("#cstatus"),
-      contactAdj=$("#contactAdj"), seqList=$("#seqList");
+      contactAdj=$("#contactAdj"), seqList=$("#seqList"),
+      segCard=$("#segCard"), segHint=$("#segHint"), swingList=$("#swingList"),
+      segStart=$("#segStart"), segEnd=$("#segEnd"),
+      segStartImg=$("#segStartImg"), segEndImg=$("#segEndImg"), segStatus=$("#segStatus");
 let chosen=null, session=null;
 
 let handChoice="auto";
@@ -230,15 +253,110 @@ analyzeBtn.onclick=async()=>{
 
 function render(d){
   spinner.classList.remove("on");
-  session={token:d.token, thumbs:d.thumbs||{}};
-  if(d.window && d.token){
-    contactSlider.min=d.window[0]; contactSlider.max=d.window[1]; contactSlider.value=d.contact;
-    contactAdj.style.display="";
-  } else contactAdj.style.display="none";
+  session={token:d.token, thumbs:d.thumbs||{}, filmstrip:d.filmstrip||{},
+           fps:d.fps||30, nFrames:d.n_frames||0, swings:d.swings||[]};
+  setupSegments(d);
+  setContactSlider(d);
   paint(d);
   result.style.display="block";
   window.scrollTo({top:0,behavior:"smooth"});
 }
+
+function setContactSlider(d){
+  if(d.window && d.token){
+    contactSlider.min=d.window[0]; contactSlider.max=d.window[1]; contactSlider.value=d.contact;
+    contactAdj.style.display="";
+  } else contactAdj.style.display="none";
+}
+
+// 重算(片段切换)后刷新: 重设击球滑杆范围+缩略图, 重绘, 高亮当前选中的一拍
+function refreshAfterRecompute(d){
+  if(session) session.thumbs=d.thumbs||session.thumbs;
+  setContactSlider(d);
+  paint(d);
+  highlightActiveSwing(d.contact);
+}
+
+// ── 挥拍片段选择 ──
+// 应高亮哪一拍: 优先"区间包含 contact"的, 否则 contact 最近的。
+// (重算后 d.contact 会在所选区间内重新定位、与候选原始 contact 略有漂移, 故不能用精确相等)
+function activeSwing(contact){
+  const sw=(session&&session.swings)||[];
+  if(!sw.length) return null;
+  let act=sw.find(s=>contact>=s.swing_start && contact<=s.end);
+  if(!act){ let best=1e9; sw.forEach(s=>{const e=Math.abs(s.contact-contact); if(e<best){best=e;act=s;}}); }
+  return act;
+}
+
+function setupSegments(d){
+  const sw=d.swings||[];
+  if(!sw.length || !d.n_frames){ segCard.style.display="none"; return; }
+  const maxF=d.n_frames-1;
+  segStart.min=0; segStart.max=maxF; segEnd.min=0; segEnd.max=maxF;
+  const act=activeSwing(d.contact)||sw[0];
+  segStart.value=act.swing_start; segEnd.value=act.end;
+  swingList.innerHTML="";
+  if(sw.length>1){
+    sw.forEach(s=>{
+      const f=document.createElement("div");
+      f.className="swingcard"+(s.i===act.i?" on":"");
+      f.dataset.i=s.i;
+      f.innerHTML=`<img src="${s.thumb||''}" alt="挥拍${s.i+1}"><div class="cap">挥拍 ${s.i+1}<br>${s.duration_s}s</div>`;
+      f.onclick=()=>{ segStart.value=s.swing_start; segEnd.value=s.end; segShow(); applySegment(); };
+      swingList.appendChild(f);
+    });
+    segHint.innerHTML=`检测到 <b>${sw.length}</b> 个挥拍。点选要分析的一个；或展开手动微调起止。`;
+    swingList.style.display="";
+  }else{
+    segHint.innerHTML=`已自动定位挥拍区间。若起止不准，可展开手动调整起点/终点。`;
+    swingList.style.display="none";
+  }
+  segShow();
+  segCard.style.display="";
+}
+
+function nearestStripSrc(idx){
+  const fs=(session&&session.filmstrip)||{}; let best=null,bd=1e9;
+  for(const k in fs){ const dd=Math.abs((+k)-idx); if(dd<bd){bd=dd;best=fs[k];} }
+  return best;
+}
+function segShow(){
+  const fps=(session&&session.fps)||30, a=+segStart.value, b=+segEnd.value;
+  segStartImg.src=nearestStripSrc(a)||"";
+  segEndImg.src=nearestStripSrc(b)||"";
+  segStatus.textContent=`片段：第 ${a}–${b} 帧（约 ${((b-a)/fps).toFixed(1)} 秒）`;
+}
+function segClamp(which){
+  const maxF=((session&&session.nFrames)||1)-1, fps=(session&&session.fps)||30, gap=Math.max(1,Math.round(0.5*fps));
+  let a=+segStart.value, b=+segEnd.value;
+  if(which==="start" && a>b-gap){ b=Math.min(maxF,a+gap); segEnd.value=b; }
+  if(which==="end"   && b<a+gap){ a=Math.max(0,b-gap); segStart.value=a; }
+  segShow();
+}
+function highlightActiveSwing(contact){
+  const act=activeSwing(contact);
+  document.querySelectorAll("#swingList .swingcard").forEach(el=>{
+    el.classList.toggle("on", !!act && (+el.dataset.i)===act.i);
+  });
+}
+async function applySegment(){
+  if(!session||!session.token) return;
+  const a=+segStart.value, b=+segEnd.value;
+  segStatus.textContent="重新分析该片段中…";
+  try{
+    const fd=new FormData();
+    fd.append("token",session.token); fd.append("contact",-1);
+    fd.append("seg_lo",a); fd.append("seg_hi",b);
+    const r=await fetch("/api/recompute",{method:"POST",body:fd});
+    const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.detail||"分析失败，请重试");
+    refreshAfterRecompute(d);
+    segShow();
+  }catch(e){ segStatus.textContent="⚠️ "+e.message; }
+}
+segStart.oninput=()=>segClamp("start");
+segEnd.oninput=()=>segClamp("end");
+segStart.onchange=applySegment;
+segEnd.onchange=applySegment;
 
 contactSlider.oninput=()=>{
   const f=contactSlider.value;
@@ -251,10 +369,11 @@ contactSlider.onchange=async()=>{
   contactAdj.classList.add("busy"); cstatus.textContent="重新分析中…";
   try{
     const fd=new FormData();fd.append("token",session.token);fd.append("contact",f);
+    if(segCard.style.display!=="none"){ fd.append("seg_lo",segStart.value); fd.append("seg_hi",segEnd.value); }
     const r=await fetch("/api/recompute",{method:"POST",body:fd});
     const d=await r.json();
     if(!r.ok||!d.ok)throw new Error(d.detail||"重算失败，请重试");
-    paint(d);
+    paint(d); highlightActiveSwing(d.contact);
   }catch(e){cstatus.textContent="⚠️ "+e.message;}
   finally{contactAdj.classList.remove("busy");}
 };

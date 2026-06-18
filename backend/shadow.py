@@ -109,7 +109,7 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
         lo_x, hi_x = min(uvals) / du, max(uvals) / du
         ax.axvspan(lo_x - 0.04, hi_x + 0.04, ymin=0.62, ymax=0.82,
                    color="#c0392b", alpha=0.10, zorder=0)
-        ax.annotate("⚠ 挤在一起·精确先后是帧率噪声，别细究排名" if cjk
+        ax.annotate("※ 挤在一起·精确先后是帧率噪声，别细究排名" if cjk
                     else "bunched: order unreliable",
                     ((lo_x + hi_x) / 2, 1.0), xytext=(0.62, 1.18),
                     ha="center", fontsize=8.5, color="#c0392b", fontweight="bold")
