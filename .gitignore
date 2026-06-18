@@ -23,3 +23,7 @@ Thumbs.db
 
 # Claude Code 本地预览配置 (含本机路径)
 .claude/
+
+# 本机临时日志/构建输出
+_mine*
+*.log

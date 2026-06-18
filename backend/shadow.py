@@ -39,15 +39,33 @@ def _fig_to_b64(fig, tight: bool = True) -> str:
 SEQ_AXIS = {"xmin": -1.65, "xmax": 0.72, "left": 0.13, "right": 0.97}
 
 
+# 字体名含这些标记之一即视为中文字体 (覆盖 Win/Linux/mac 常见中文字体)。
+# 松散匹配 → 对 matplotlib 不同版本/.ttc 变体后缀的命名差异更健壮, 避免线上图表退回英文/豆腐块。
+_CJK_MARKERS = ("yahei", "simhei", "simsun", "song", "noto sans cjk", "noto serif cjk",
+                "source han", "wenquanyi", "wqy", "zenhei", "zen hei", "pingfang",
+                "hiragino", "heiti", "kaiti", "fangsong", "droid sans fallback")
+
+
 def _use_cjk_font():
-    """尽量挑一个能显示中文的字体, 没有则退回默认 (英文标签)。"""
+    """挑一个能显示中文的字体, 没有则退回默认 (英文标签)。
+    先按优先级找具名字体, 找不到再松散扫描任何含 CJK 标记的字体; 都用其"真实注册名"设置,
+    避免候选名与实际名略有出入(如 .ttc 变体后缀)时 matplotlib 解析不到而仍渲染豆腐块。"""
     from matplotlib import font_manager
+    fonts = font_manager.fontManager.ttflist
+
+    def _apply(real_name: str) -> bool:
+        plt.rcParams["font.sans-serif"] = [real_name, "DejaVu Sans"]
+        plt.rcParams["axes.unicode_minus"] = False
+        return True
+
     for name in ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC",
-                 "WenQuanYi Zen Hei", "Arial Unicode MS"]:
-        if any(name.lower() in f.name.lower() for f in font_manager.fontManager.ttflist):
-            plt.rcParams["font.sans-serif"] = [name]
-            plt.rcParams["axes.unicode_minus"] = False
-            return True
+                 "WenQuanYi Zen Hei", "Arial Unicode MS"]:      # 1) 优先级具名匹配
+        for f in fonts:
+            if name.lower() in f.name.lower():
+                return _apply(f.name)
+    for f in fonts:                                             # 2) 兜底: 任意含 CJK 标记的字体
+        if any(m in f.name.lower() for m in _CJK_MARKERS):
+            return _apply(f.name)
     plt.rcParams["axes.unicode_minus"] = False
     return False
 
@@ -55,6 +73,9 @@ def _use_cjk_font():
 _SEG_STYLE = [("hip", "髋", "#2e7d32"), ("shoulder", "肩", "#1f77b4"),
               ("upper_arm", "上臂", "#9467bd"), ("forearm", "前臂", "#ff7f0e"),
               ("wrist", "手腕", "#d62728")]
+# 无中文字体时的英文兜底标签 (比 k[:2]='hi/sh/up' 易懂)
+_SEG_EN = {"hip": "Hip", "shoulder": "Shoulder", "upper_arm": "U.arm",
+           "forearm": "Forearm", "wrist": "Wrist"}
 
 
 def render_sequence_timeline(user_pt: dict, ref_pt: dict,
@@ -81,7 +102,7 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
     for i, (k, zh, c) in enumerate(_SEG_STYLE):
         x0 = -1.4 + i * 0.42
         ax.scatter([x0], [1.62], s=70, color=c, edgecolors="white", linewidths=1)
-        ax.text(x0 + 0.05, 1.62, zh if cjk else k[:2], va="center", fontsize=9, color="#333")
+        ax.text(x0 + 0.05, 1.62, zh if cjk else _SEG_EN.get(k, k), va="center", fontsize=9, color="#333")
     # 防误读: 用户各环节若挤在 ~3帧内(低于手机帧率分辨率), 精确先后是噪声 → 明确警示
     uvals = [user_pt.get(k) for k, _zh, _c in _SEG_STYLE if user_pt.get(k) is not None]
     if len(uvals) >= 3 and (max(uvals) - min(uvals)) < 0.10:

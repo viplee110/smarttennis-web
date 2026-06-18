@@ -150,12 +150,9 @@
       <div id="seqList"></div>
     </div>
     <div class="card imgcard">
-      <h3>发力时间轴：你 vs 德约</h3>
-      <div class="sub">每个部位一个点 = 它发力最集中的时刻。<b>越靠左=越早</b>；<b>点拉得越开 = 发力链越依次展开</b>（德约式）。你的点若挤在击球附近，说明发力太集中、偏"用手臂打"。<br><b style="color:#c0392b">注意</b>：各部位<b>挤在一起时别纠结精确先后</b>——手机帧率分不清 2 帧内的顺序，只看<b>你(挤) vs 德约(散)</b>的整体差异。慢动作(120/240fps)拍可让精确顺序变可信。</div>
-      <div class="seqwrap"><img id="seqChartImg" alt="发力时间轴"><div class="seqline" id="seqLine"></div></div>
-      <details style="margin-top:10px">
-        <summary class="sub" style="cursor:pointer;color:var(--green);font-weight:600">▸ 进阶：完整动力链速度曲线</summary>
-        <div class="sub" style="margin-top:6px">横轴=挥拍相位（0=击球，-1=前挥起点），DTW 对齐。实线=你，虚线=德约；看每色高峰从左到右先后。曲线密集是专业视角，看上面时间轴即可。</div>
+      <details>
+        <summary style="cursor:pointer;font-weight:700;font-size:17px;color:var(--green)">完整动力链速度曲线 · 进阶</summary>
+        <div class="sub" style="margin-top:8px">横轴=挥拍相位（0=击球，-1=前挥起点），DTW 对齐。实线=你，虚线=德约；看每色高峰从左到右先后。这是专业视角——日常看下方「逐帧同步对比」里的发力时间轴即可。</div>
         <img id="chartImg" alt="动力链时序图" style="margin-top:6px">
       </details>
     </div>
@@ -168,8 +165,9 @@
       </div>
       <input type="range" id="scrubSlider" class="scrubSlider" min="0" max="20" value="13">
       <div class="scrubPhase" id="scrubPhase"></div>
-      <div class="sub" style="margin-top:8px;text-align:center">↓ 你此刻在挥拍中的位置(绿线随滑杆移动)</div>
+      <div class="sub" style="margin-top:10px;text-align:center"><b>发力时间轴</b>：绿线=你此刻挥拍位置（随滑杆移动）</div>
       <div class="seqwrap"><img id="scrubMini" alt="发力时间轴"><div class="seqline" id="seqLine2"></div></div>
+      <div class="sub" style="margin-top:8px">每个部位一个点 = 它发力最集中的时刻。<b>越靠左=越早</b>；<b>点拉得越开 = 发力链越依次展开</b>（德约式）。你的点若挤在击球附近，说明发力太集中、偏"用手臂打"。<br><b style="color:#c0392b">注意</b>：各部位<b>挤在一起时别纠结精确先后</b>——手机帧率分不清 2 帧内的顺序，只看<b>你(挤) vs 德约(散)</b>的整体差异。慢动作(120/240fps)拍可让精确顺序变可信。</div>
     </div>
     <div class="card imgcard" id="overlayCard">
       <h3>影子对比（击球瞬间）</h3>
@@ -269,14 +267,13 @@ function paint(d){
     $("#contactCard").style.display="";}
   else $("#contactCard").style.display="none";
   cstatus.textContent="当前击球帧：第 "+d.contact+" 帧";
-  if(d.sequence_chart)$("#seqChartImg").src=d.sequence_chart;
   $("#chartImg").src=d.kinetic_chart;
   if(d.shadow_overlay){$("#overlayImg").src=d.shadow_overlay;$("#overlayCard").style.display="";}
   else $("#overlayCard").style.display="none";
 
   // 同步逐帧 scrubber
   const su=d.scrub_user||[], sd=d.scrub_djoko||[], sp=d.scrub_phases||[], ax=d.seq_axis;
-  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider"), seqLine=$("#seqLine"), seqLine2=$("#seqLine2");
+  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider"), seqLine2=$("#seqLine2");
   if(su.length && sd.length){
     scrubCard.style.display="";
     if(d.sequence_chart)$("#scrubMini").src=d.sequence_chart;   // 滑杆正下方的小时间轴(同屏可见)
@@ -289,12 +286,12 @@ function paint(d){
       const ph=sp[i]!=null?sp[i]:0;
       $("#scrubPhase").textContent=Math.abs(ph)<0.04?"⚡ 击球瞬间"
         :(ph<0?`引拍/前挥中（击球前 ${Math.abs(ph).toFixed(2)}）`:`随挥（击球后 ${ph.toFixed(2)}）`);
-      // 同步竖线: 当前相位→像素x, 同时画在滑杆下方小图(同屏看得见)和上方大图
+      // 同步竖线: 当前相位→像素x, 画在滑杆正下方的发力时间轴上(同屏可见)
       if(ax){const left=(ax.left+(ph-ax.xmin)/(ax.xmax-ax.xmin)*(ax.right-ax.left))*100;
-        [seqLine,seqLine2].forEach(L=>{if(L){L.style.left=left.toFixed(1)+"%"; L.style.opacity=1;}});}
+        seqLine2.style.left=left.toFixed(1)+"%"; seqLine2.style.opacity=1;}
     };
     slr.oninput=upd; upd();
-  } else {scrubCard.style.display="none"; [seqLine,seqLine2].forEach(L=>{if(L)L.style.opacity=0;});}
+  } else {scrubCard.style.display="none"; if(seqLine2)seqLine2.style.opacity=0;}
 
   const seq=d.report.sequencing||[], sc=$("#seqCard");
   seqList.innerHTML="";
