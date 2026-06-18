@@ -264,9 +264,13 @@ def scrub_strip_at(video_path: str, frames_lm, frame_indices, width: int = 240) 
 
 
 def scrub_strip(video_path: str, frames_lm, contact: int, loading_s: float,
-                fps: float, width: int = 240) -> list:
-    """沿统一相位轴(SCRUB_PHASES, 线性)生成帧条。德约预生成静态条用它。"""
+                fps: float, width: int = 240, bounds=None) -> list:
+    """沿统一相位轴(SCRUB_PHASES, 线性)生成帧条。德约预生成静态条用它。
+    bounds=(lo,hi) 时把帧钳制在用户所选挥拍片段内, 不越界到片段外(随挥侧尤甚)。"""
     idx = [int(round(contact + tau * loading_s * fps)) for tau in SCRUB_PHASES]
+    if bounds:
+        lo, hi = int(bounds[0]), int(bounds[1])
+        idx = [max(lo, min(hi, i)) for i in idx]
     return scrub_strip_at(video_path, frames_lm, idx, width)
 
 

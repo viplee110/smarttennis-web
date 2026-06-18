@@ -353,10 +353,25 @@ async function applySegment(){
     segShow();
   }catch(e){ segStatus.textContent="⚠️ "+e.message; }
 }
-segStart.oninput=()=>segClamp("start");
-segEnd.oninput=()=>segClamp("end");
+segStart.oninput=()=>{ segClamp("start"); scheduleExact("start"); };
+segEnd.oninput=()=>{ segClamp("end"); scheduleExact("end"); };
 segStart.onchange=applySegment;
 segEnd.onchange=applySegment;
+
+// 拖动时先用胶片条(0.4s粒度)秒回, 停顿~150ms 再向后端取该帧的精确缩略图覆盖, 做到逐帧精确预览
+let _exactTimer=null;
+function scheduleExact(which){ clearTimeout(_exactTimer); _exactTimer=setTimeout(()=>exactFrame(which), 150); }
+async function exactFrame(which){
+  if(!session||!session.token) return;
+  const img = which==="start"?segStartImg:segEndImg;
+  const idx = which==="start"?+segStart.value:+segEnd.value;
+  try{
+    const fd=new FormData(); fd.append("token",session.token); fd.append("idx",idx);
+    const r=await fetch("/api/frame",{method:"POST",body:fd});
+    const d=await r.json();
+    if(d&&d.ok&&d.thumb&&idx===(which==="start"?+segStart.value:+segEnd.value)) img.src=d.thumb;  // 仍是当前值才覆盖
+  }catch(e){}
+}
 
 contactSlider.oninput=()=>{
   const f=contactSlider.value;

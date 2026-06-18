@@ -110,7 +110,8 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
     # 反而忠实度更差 → 回退线性, 让用户能扫到自己挥拍的每一帧。
     fps_u = float(landmarks.get("fps", 30.0))
     scrub_user = shadow.scrub_strip(
-        video_path, landmarks["frames"], res["contact"], res.get("loading_s", 1.0), fps_u)
+        video_path, landmarks["frames"], res["contact"], res.get("loading_s", 1.0), fps_u,
+        bounds=seg)               # 逐帧对比钳制在所选挥拍片段内
 
     scalar = {k: round(float(v), 3) for k, v in res["metrics"].items()
               if isinstance(v, (int, float)) and not isinstance(v, bool)}
@@ -281,6 +282,19 @@ async def recompute(token: str = Form(...), contact: int = Form(-1),
     result.update({"token": token, "n_frames": n, "fps": fps,
                    "window": win, "thumbs": thumbs})
     return JSONResponse(result)
+
+
+@app.post("/api/frame")
+async def frame(token: str = Form(...), idx: int = Form(...)):
+    """按需取单帧缩略图(base64), 供片段起止滑杆拖动时逐帧精确预览(不必预载全视频缩略图)。"""
+    sess = SESSIONS.get(token)
+    if not sess:
+        raise HTTPException(404, "会话已过期, 请重新上传分析")
+    SESSIONS.move_to_end(token)
+    n = len(sess["landmarks"]["frames"])
+    i = max(0, min(n - 1, int(idx)))
+    thumb = _frame_thumbs(sess["video"], [i], width=160).get(str(i))
+    return JSONResponse({"ok": True, "idx": i, "thumb": thumb})
 
 
 # 前端静态资源 (放最后, 不覆盖 /api/*)
