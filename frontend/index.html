@@ -81,7 +81,7 @@
   .seqnote{font-size:12px;margin-top:8px;color:var(--muted);line-height:1.5}
   .scrubRow{display:flex;gap:8px;margin-top:10px}
   .scrubCol{flex:1;text-align:center}
-  .scrubCol img{width:100%;border-radius:10px;background:var(--bg);min-height:90px;object-fit:contain}
+  .scrubCol img{max-width:100%;max-height:38vh;border-radius:10px;background:var(--bg)}
   .scrubCol .cap{font-size:12px;color:var(--muted);margin-top:4px;font-weight:600}
   .scrubSlider{width:100%;margin-top:12px;accent-color:var(--green)}
   .scrubPhase{text-align:center;margin-top:6px;font-weight:600;color:var(--green)}
@@ -168,6 +168,8 @@
       </div>
       <input type="range" id="scrubSlider" class="scrubSlider" min="0" max="20" value="13">
       <div class="scrubPhase" id="scrubPhase"></div>
+      <div class="sub" style="margin-top:8px;text-align:center">↓ 你此刻在挥拍中的位置(绿线随滑杆移动)</div>
+      <div class="seqwrap"><img id="scrubMini" alt="发力时间轴"><div class="seqline" id="seqLine2"></div></div>
     </div>
     <div class="card imgcard" id="overlayCard">
       <h3>影子对比（击球瞬间）</h3>
@@ -274,9 +276,10 @@ function paint(d){
 
   // 同步逐帧 scrubber
   const su=d.scrub_user||[], sd=d.scrub_djoko||[], sp=d.scrub_phases||[], ax=d.seq_axis;
-  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider"), seqLine=$("#seqLine");
+  const scrubCard=$("#scrubCard"), slr=$("#scrubSlider"), seqLine=$("#seqLine"), seqLine2=$("#seqLine2");
   if(su.length && sd.length){
     scrubCard.style.display="";
+    if(d.sequence_chart)$("#scrubMini").src=d.sequence_chart;   // 滑杆正下方的小时间轴(同屏可见)
     slr.max=su.length-1;
     let ci=0,best=9; sp.forEach((v,i)=>{if(Math.abs(v)<best){best=Math.abs(v);ci=i;}});
     slr.value=ci;
@@ -286,12 +289,12 @@ function paint(d){
       const ph=sp[i]!=null?sp[i]:0;
       $("#scrubPhase").textContent=Math.abs(ph)<0.04?"⚡ 击球瞬间"
         :(ph<0?`引拍/前挥中（击球前 ${Math.abs(ph).toFixed(2)}）`:`随挥（击球后 ${ph.toFixed(2)}）`);
-      // 同步竖线: 把当前相位映射到上方动力链图的像素x → 一眼看到"此刻在曲线哪段"
-      if(ax){const f=ax.left+(ph-ax.xmin)/(ax.xmax-ax.xmin)*(ax.right-ax.left);
-        seqLine.style.left=(f*100).toFixed(1)+"%"; seqLine.style.opacity=1;}
+      // 同步竖线: 当前相位→像素x, 同时画在滑杆下方小图(同屏看得见)和上方大图
+      if(ax){const left=(ax.left+(ph-ax.xmin)/(ax.xmax-ax.xmin)*(ax.right-ax.left))*100;
+        [seqLine,seqLine2].forEach(L=>{if(L){L.style.left=left.toFixed(1)+"%"; L.style.opacity=1;}});}
     };
     slr.oninput=upd; upd();
-  } else {scrubCard.style.display="none"; if(seqLine)seqLine.style.opacity=0;}
+  } else {scrubCard.style.display="none"; [seqLine,seqLine2].forEach(L=>{if(L)L.style.opacity=0;});}
 
   const seq=d.report.sequencing||[], sc=$("#seqCard");
   seqList.innerHTML="";
