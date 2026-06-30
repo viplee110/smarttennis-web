@@ -97,6 +97,14 @@
   .segrow .seglab{flex:0 0 60px;font-size:12px;font-weight:600;color:var(--muted)}
   .segrow .segthumb{flex:0 0 84px;height:52px;object-fit:cover;border-radius:8px;background:var(--bg)}
   .segrow .cslider{flex:1;margin:0}
+  .histcard{display:flex;align-items:center;gap:12px;padding:8px;border:1px solid #e3e8e5;border-radius:12px;margin-top:8px;cursor:pointer;background:var(--bg)}
+  .histcard:active{background:#eef7f0}
+  .histcard img{width:72px;height:54px;object-fit:cover;border-radius:8px;flex:0 0 auto;background:#dfe6e2}
+  .histcard .histmeta{flex:1;min-width:0}
+  .histcard .hs{font-size:20px;font-weight:800;color:var(--green);line-height:1}
+  .histcard .hs small{font-size:12px;color:var(--muted);font-weight:600}
+  .histcard .ht{font-size:12px;color:var(--muted);margin-top:3px}
+  .histcard .harrow{color:var(--muted);font-size:22px;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -126,6 +134,12 @@
     <button class="btn" id="analyzeBtn" style="display:none">开始分析</button>
     <div class="hint">建议：侧面机位、单人入镜。视频 ≤30 秒；可含多次挥拍，分析时再选要测的那一拍。</div>
     <div class="err" id="err"></div>
+  </div>
+
+  <div class="card" id="historyCard" style="display:none">
+    <h3 style="margin:0 0 4px">历史记录</h3>
+    <div class="sub" style="margin-bottom:4px">本地保存的最近 3 次，点开继续看（逐帧对比可离线拖动）</div>
+    <div id="historyList"></div>
   </div>
 
   <div class="spinner" id="spinner">
@@ -220,7 +234,7 @@ const camInput=$("#camInput"), fileInput=$("#fileInput"),
       segStart=$("#segStart"), segEnd=$("#segEnd"),
       segStartImg=$("#segStartImg"), segEndImg=$("#segEndImg"), segStatus=$("#segStatus");
 let chosen=null, session=null;
-let lastResult=null, _djokoB64=null, _djokoContactB64=null;   // 本地持久化用
+let lastResult=null, _djokoB64=null, _djokoContactB64=null, _restoring=false;   // 本地持久化/历史用
 
 let handChoice="auto";
 document.querySelectorAll("#handsel button").forEach(b=>b.onclick=()=>{
@@ -238,11 +252,12 @@ fileInput.onchange=()=>onPick(fileInput);
 $("#againBtn").onclick=()=>{result.style.display="none";uploadCard.style.display="";
   fileName.textContent="";analyzeBtn.style.display="none";chosen=null;
   camInput.value="";fileInput.value="";
+  renderHistory();                                   // 回首页时刷新历史(把刚做完的这次也显示出来)
   window.scrollTo({top:0,behavior:"smooth"});};
 
 analyzeBtn.onclick=async()=>{
   if(!chosen)return;
-  err.style.display="none";uploadCard.style.display="none";spinner.classList.add("on");
+  err.style.display="none";uploadCard.style.display="none";$("#historyCard").style.display="none";spinner.classList.add("on");
   try{
     const fd=new FormData();fd.append("video",chosen);fd.append("hand",handChoice);
     const r=await fetch("/api/analyze",{method:"POST",body:fd});
@@ -468,10 +483,10 @@ function paint(d){
         <div class="tip">${it.tip}</div>
       </div>`);
   });
-  lastResult=d; schedulePersist();                 // 每次显示结果 → 本地缓存(防刷新丢失)
+  lastResult=d; if(!_restoring) schedulePersist();   // 每次显示结果 → 写入本地历史(防刷新丢失)
 }
 
-// ── 本地持久化: 把上次分析(含逐帧对比帧)存进 IndexedDB, 刷新/重开后可继续逐帧拖动 ──
+// ── 本地历史: 最近 3 次分析存进 IndexedDB, 首页卡片点开可继续看(逐帧对比离线可拖) ──
 function _idbOpen(){
   return new Promise((res,rej)=>{
     const r=indexedDB.open("smarttennis",1);
@@ -482,41 +497,79 @@ function _idbOpen(){
 async function _idbSet(k,v){ const db=await _idbOpen(); return new Promise((res,rej)=>{const tx=db.transaction("kv","readwrite"); tx.objectStore("kv").put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);}); }
 async function _idbGet(k){ const db=await _idbOpen(); return new Promise((res,rej)=>{const rq=db.transaction("kv","readonly").objectStore("kv").get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);}); }
 async function _urlToDataURL(u){ const b=await (await fetch(u)).blob(); return await new Promise((res,rej)=>{const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(fr.error); fr.readAsDataURL(b);}); }
+function _slim(d){ return {...d, thumbs:undefined, filmstrip:undefined}; }  // 丢掉需联网重算的滑杆预览, 省体积
 
 let _persistTimer=null;
-function schedulePersist(){ clearTimeout(_persistTimer); _persistTimer=setTimeout(persistLast, 800); }
-async function persistLast(){
-  if(!lastResult) return;
-  try{
-    const d=lastResult;
-    if(!_djokoB64){                                  // 德约 21 帧是URL → 抓一次转base64, 之后离线可用
-      const urls=d.scrub_djoko||[];
-      _djokoB64=await Promise.all(urls.map(u=> (typeof u==="string"&&u.startsWith("data:"))?u:_urlToDataURL(u).catch(()=>null)));
-    }
-    if(_djokoContactB64==null && d.djokovic_contact){
-      _djokoContactB64 = d.djokovic_contact.startsWith("data:") ? d.djokovic_contact : await _urlToDataURL(d.djokovic_contact).catch(()=>null);
-    }
-    // 只存"静态查看+逐帧拖动"所需; 丢掉 thumbs/filmstrip(那是给需联网重算的滑杆预览用的, 省体积)
-    const slim={...d, thumbs:undefined, filmstrip:undefined};
-    await _idbSet("last", {d:slim, djoko_b64:_djokoB64, djoko_contact_b64:_djokoContactB64, savedAt:Date.now()});
-  }catch(e){ /* 隐私模式/配额满 → 忽略, 不影响主流程 */ }
+function schedulePersist(){ clearTimeout(_persistTimer); _persistTimer=setTimeout(persistCurrent, 600); }
+async function persistCurrent(){
+  if(!lastResult || !lastResult.token) return;
+  const d=lastResult;
+  const entry={ id:d.token, savedAt:Date.now(),
+    score:(d.report&&d.report.score!=null)?d.report.score:null, contact:d.contact, label:"正手",
+    thumb:d.user_contact||d.djokovic_contact||null, d:_slim(d),
+    djoko_b64:_djokoB64||null, djoko_contact_b64:_djokoContactB64||null };
+  try{                                               // 关键: 立刻写库, 不等德约图抓取(手机抓图慢/被挡也不丢历史)
+    let hist=(await _idbGet("history"))||[]; if(!Array.isArray(hist)) hist=[];
+    const i=hist.findIndex(e=>e&&e.id===entry.id);
+    if(i>=0){ entry.djoko_b64=hist[i].djoko_b64||entry.djoko_b64; entry.djoko_contact_b64=hist[i].djoko_contact_b64||entry.djoko_contact_b64; hist[i]=entry; }
+    else hist.unshift(entry);
+    await _idbSet("history", hist.slice(0,3));
+  }catch(e){ return; }                               // 隐私模式/配额满 → 忽略, 不影响主流程
+  upgradeDjoko(entry.id);                             // 再异步把德约21帧升级成base64(离线拖动用, 尽力而为)
 }
-async function restoreLast(){
-  let saved=null;
-  try{ saved=await _idbGet("last"); }catch(e){}
-  if(!saved||!saved.d) return;
+async function upgradeDjoko(id){
   try{
-    const d=saved.d;
-    if(saved.djoko_b64) d.scrub_djoko=saved.djoko_b64.map((b,i)=> b || (d.scrub_djoko||[])[i]);
-    if(saved.djoko_contact_b64) d.djokovic_contact=saved.djoko_contact_b64;
-    _djokoB64=saved.djoko_b64||null; _djokoContactB64=saved.djoko_contact_b64||null;   // 别再重复抓
+    if(!_djokoB64 && lastResult && lastResult.scrub_djoko){
+      const urls=lastResult.scrub_djoko;
+      _djokoB64=await Promise.all(urls.map(u=>(typeof u==="string"&&u.startsWith("data:"))?u:_urlToDataURL(u).catch(()=>null)));
+    }
+    if(_djokoContactB64==null && lastResult && lastResult.djokovic_contact){
+      _djokoContactB64 = lastResult.djokovic_contact.startsWith("data:")?lastResult.djokovic_contact:await _urlToDataURL(lastResult.djokovic_contact).catch(()=>null);
+    }
+    if(!_djokoB64) return;
+    let hist=(await _idbGet("history"))||[]; const i=hist.findIndex(e=>e&&e.id===id);
+    if(i>=0){ hist[i].djoko_b64=_djokoB64; hist[i].djoko_contact_b64=_djokoContactB64; await _idbSet("history", hist); }
+  }catch(e){}
+}
+function _ago(ts){
+  if(!ts) return "";
+  const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<60) return "刚刚";
+  if(s<3600) return Math.floor(s/60)+" 分钟前";
+  if(s<86400) return Math.floor(s/3600)+" 小时前";
+  return Math.floor(s/86400)+" 天前";
+}
+async function renderHistory(){
+  let hist=[]; try{ hist=(await _idbGet("history"))||[]; }catch(e){}
+  const wrap=$("#historyList");
+  if(!Array.isArray(hist) || !hist.length){ $("#historyCard").style.display="none"; return; }
+  wrap.innerHTML="";
+  hist.forEach(e=>{
+    const div=document.createElement("div"); div.className="histcard";
+    div.innerHTML=`<img src="${e.thumb||''}" alt="历史"><div class="histmeta">`+
+      `<div class="hs">${e.score!=null?e.score+'<small>/100</small>':'—'}</div>`+
+      `<div class="ht">${e.label||''} · 击球第${e.contact}帧 · ${_ago(e.savedAt)}</div></div><div class="harrow">›</div>`;
+    div.onclick=()=>openHistory(e.id);
+    wrap.appendChild(div);
+  });
+  $("#historyCard").style.display="";
+}
+async function openHistory(id){
+  let hist=[]; try{ hist=(await _idbGet("history"))||[]; }catch(e){}
+  const e=hist.find(x=>x&&x.id===id); if(!e||!e.d) return;
+  try{
+    const d=e.d;
+    if(e.djoko_b64) d.scrub_djoko=e.djoko_b64.map((b,i)=> b || (d.scrub_djoko||[])[i]);
+    if(e.djoko_contact_b64) d.djokovic_contact=e.djoko_contact_b64;
+    _djokoB64=e.djoko_b64||_djokoB64; _djokoContactB64=e.djoko_contact_b64||_djokoContactB64;
     session={token:d.token, thumbs:{}, filmstrip:{}, fps:d.fps||30, nFrames:d.n_frames||0, swings:d.swings||[], restored:true};
-    setupSegments(d); setContactSlider(d); paint(d);
+    _restoring=true; setupSegments(d); setContactSlider(d); paint(d); _restoring=false;  // 恢复≠新分析, 别回存
     $("#restoredNote").style.display="";
-    uploadCard.style.display="none"; result.style.display="block";
-  }catch(e){ try{ await _idbSet("last", null); }catch(_){} }   // 缓存损坏/结构不兼容 → 清掉, 回到上传
+    uploadCard.style.display="none"; $("#historyCard").style.display="none"; result.style.display="block";
+    window.scrollTo({top:0,behavior:"smooth"});
+  }catch(err){ _restoring=false; }
 }
-restoreLast();
+renderHistory();
 </script>
 </body>
 </html>
