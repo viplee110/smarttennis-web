@@ -75,14 +75,6 @@ def _wrist_speed(world: np.ndarray, j: int, fps: float) -> np.ndarray:
     return np.linalg.norm(np.gradient(world[:, j], axis=0) * fps, axis=1)
 
 
-def _center_weight(T: int, sigma_frac: float = 0.18) -> np.ndarray:
-    """以片段正中为峰的高斯权重 (smart_cutter 把挥拍放在片段中心),
-    用来压低边缘的准备/恢复快动作, 突出真正的击球。"""
-    idx = np.arange(T)
-    c, sigma = (T - 1) / 2.0, sigma_frac * T
-    return np.exp(-0.5 * ((idx - c) / sigma) ** 2)
-
-
 def detect_facing(frames) -> float:
     """面朝方向: 鼻子相对双耳中点的水平偏移 (鼻在前)。
     +1 = 面朝图像右侧(+x), -1 = 面朝左侧。用于跨机位镜像对齐。"""
@@ -99,10 +91,11 @@ def detect_facing(frames) -> float:
 
 
 def detect_handedness(world: np.ndarray, fps: float) -> str:
-    """挥拍手 = 中心加权手腕速度峰值更高的那只手。"""
-    w = _center_weight(world.shape[0])
-    rp = (_wrist_speed(world, R_WR, fps) * w).max()
-    lp = (_wrist_speed(world, L_WR, fps) * w).max()
+    """挥拍手 = 全程手腕速度峰值更高的那只手 (平滑抑噪)。
+    不再按'片段中心'加权 —— 用户上传的长视频里挥拍未必在中段(可能在开头/结尾),
+    中心加权会取到无关区域、把右手误判成左手(反之亦然)。"""
+    rp = float(_smooth(_wrist_speed(world, R_WR, fps), 5).max())
+    lp = float(_smooth(_wrist_speed(world, L_WR, fps), 5).max())
     return "R" if rp >= lp else "L"
 
 
@@ -400,7 +393,10 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
         seg_hi = int(max(seg_lo + 1, min(n, int(seg[1]) + 1)))      # 转为 [lo,hi) 半开
         swing_start = seg_lo
         if contact_override is not None:
-            contact = int(np.clip(contact_override, seg_lo, seg_hi - 1))
+            # 用户指定的击球帧优先: 只钳到 [seg_lo, n-1], 允许超出自动片段尾(自动片段可能切早了),
+            # 并扩窗以纳入该击球帧 + 随挥, 否则用户想设的真实击球帧会被旧 seg_hi 卡住。
+            contact = int(np.clip(contact_override, seg_lo, n - 1))
+            seg_hi = min(n, max(seg_hi, contact + int(round(0.5 * fps)) + 1))
         else:
             contact = _contact_in_range(data["frames"], fps, full["hand"], facing, seg_lo, seg_hi)
         bound_lo, bound_hi = seg_lo, seg_hi

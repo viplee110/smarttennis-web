@@ -177,7 +177,8 @@ def _contact_slider(video_path: str, fps: float, contact: int, n: int, bounds=No
     lo = max(0, contact - int(round(0.8 * fps)))
     hi = min(n - 1, contact + int(round(0.5 * fps)))
     if bounds:
-        lo = max(lo, int(bounds[0])); hi = min(hi, int(bounds[1]))
+        m = int(round(0.5 * fps))                 # 给余量: 自动片段可能切早, 让用户能拖到片段外的真实击球帧
+        lo = max(0, max(lo, int(bounds[0]) - m)); hi = min(n - 1, min(hi, int(bounds[1]) + m))
     if hi < lo:
         hi = lo
     return [lo, hi], _thumbs(video_path, lo, hi)
