@@ -134,6 +134,9 @@
   </div>
 
   <div id="result">
+    <div class="card" id="restoredNote" style="display:none;background:#eef7f0;border:1px solid var(--green)">
+      <div class="sub" style="margin:0">📁 已恢复上次分析（本地保存，刷新不丢）。<b>逐帧对比可直接拖动</b>；如需重新调整击球帧/片段，请「重新分析另一段」。</div>
+    </div>
     <div class="card">
       <div class="scorebar">
         <div class="scorenum" id="score">0<small>/100</small></div>
@@ -217,6 +220,7 @@ const camInput=$("#camInput"), fileInput=$("#fileInput"),
       segStart=$("#segStart"), segEnd=$("#segEnd"),
       segStartImg=$("#segStartImg"), segEndImg=$("#segEndImg"), segStatus=$("#segStatus");
 let chosen=null, session=null;
+let lastResult=null, _djokoB64=null, _djokoContactB64=null;   // 本地持久化用
 
 let handChoice="auto";
 document.querySelectorAll("#handsel button").forEach(b=>b.onclick=()=>{
@@ -253,6 +257,7 @@ analyzeBtn.onclick=async()=>{
 
 function render(d){
   spinner.classList.remove("on");
+  $("#restoredNote").style.display="none";          // 新分析, 非恢复
   session={token:d.token, thumbs:d.thumbs||{}, filmstrip:d.filmstrip||{},
            fps:d.fps||30, nFrames:d.n_frames||0, swings:d.swings||[]};
   setupSegments(d);
@@ -463,7 +468,55 @@ function paint(d){
         <div class="tip">${it.tip}</div>
       </div>`);
   });
+  lastResult=d; schedulePersist();                 // 每次显示结果 → 本地缓存(防刷新丢失)
 }
+
+// ── 本地持久化: 把上次分析(含逐帧对比帧)存进 IndexedDB, 刷新/重开后可继续逐帧拖动 ──
+function _idbOpen(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open("smarttennis",1);
+    r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  });
+}
+async function _idbSet(k,v){ const db=await _idbOpen(); return new Promise((res,rej)=>{const tx=db.transaction("kv","readwrite"); tx.objectStore("kv").put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error);}); }
+async function _idbGet(k){ const db=await _idbOpen(); return new Promise((res,rej)=>{const rq=db.transaction("kv","readonly").objectStore("kv").get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);}); }
+async function _urlToDataURL(u){ const b=await (await fetch(u)).blob(); return await new Promise((res,rej)=>{const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>rej(fr.error); fr.readAsDataURL(b);}); }
+
+let _persistTimer=null;
+function schedulePersist(){ clearTimeout(_persistTimer); _persistTimer=setTimeout(persistLast, 800); }
+async function persistLast(){
+  if(!lastResult) return;
+  try{
+    const d=lastResult;
+    if(!_djokoB64){                                  // 德约 21 帧是URL → 抓一次转base64, 之后离线可用
+      const urls=d.scrub_djoko||[];
+      _djokoB64=await Promise.all(urls.map(u=> (typeof u==="string"&&u.startsWith("data:"))?u:_urlToDataURL(u).catch(()=>null)));
+    }
+    if(_djokoContactB64==null && d.djokovic_contact){
+      _djokoContactB64 = d.djokovic_contact.startsWith("data:") ? d.djokovic_contact : await _urlToDataURL(d.djokovic_contact).catch(()=>null);
+    }
+    // 只存"静态查看+逐帧拖动"所需; 丢掉 thumbs/filmstrip(那是给需联网重算的滑杆预览用的, 省体积)
+    const slim={...d, thumbs:undefined, filmstrip:undefined};
+    await _idbSet("last", {d:slim, djoko_b64:_djokoB64, djoko_contact_b64:_djokoContactB64, savedAt:Date.now()});
+  }catch(e){ /* 隐私模式/配额满 → 忽略, 不影响主流程 */ }
+}
+async function restoreLast(){
+  let saved=null;
+  try{ saved=await _idbGet("last"); }catch(e){}
+  if(!saved||!saved.d) return;
+  try{
+    const d=saved.d;
+    if(saved.djoko_b64) d.scrub_djoko=saved.djoko_b64.map((b,i)=> b || (d.scrub_djoko||[])[i]);
+    if(saved.djoko_contact_b64) d.djokovic_contact=saved.djoko_contact_b64;
+    _djokoB64=saved.djoko_b64||null; _djokoContactB64=saved.djoko_contact_b64||null;   // 别再重复抓
+    session={token:d.token, thumbs:{}, filmstrip:{}, fps:d.fps||30, nFrames:d.n_frames||0, swings:d.swings||[], restored:true};
+    setupSegments(d); setContactSlider(d); paint(d);
+    $("#restoredNote").style.display="";
+    uploadCard.style.display="none"; result.style.display="block";
+  }catch(e){ try{ await _idbSet("last", null); }catch(_){} }   // 缓存损坏/结构不兼容 → 清掉, 回到上传
+}
+restoreLast();
 </script>
 </body>
 </html>
