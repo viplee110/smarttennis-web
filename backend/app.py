@@ -32,6 +32,23 @@ app = FastAPI(title="SmartTennis MVP")
 with open(REFERENCE_PATH, encoding="utf-8") as fh:
     REFERENCE = json.load(fh)
 
+
+def _inject_rot_pre_band(ref: dict) -> None:
+    """从已有 ideal_curve 现导德约'击球前旋转完成度'参考值, 注入 metrics_band(无需重建参考)。
+    band 宽度为启发式(只有单条代表曲线、非208条IQR); 日后重建参考可换成真IQR。"""
+    try:
+        ic = ref["reference"]["ideal_curve"]; t = ic["t"]; hip = ic["hip"]; sho = ic["shoulder"]
+        pre = sum(abs(hip[i]) + abs(sho[i]) for i in range(len(t)) if t[i] < 0)
+        tot = sum(abs(hip[i]) + abs(sho[i]) for i in range(len(t))) + 1e-9
+        med = round(pre / tot, 3)
+    except Exception:                                # noqa: BLE001
+        med = 0.6
+    ref.setdefault("metrics_band", {})["rot_pre_frac"] = {
+        "lo": round(med * 0.6, 3), "hi": 1.0, "median": med, "min": 0.0, "max": 1.0, "n": 1}
+
+
+_inject_rot_pre_band(REFERENCE)
+
 # 德约参考的面朝方向 (用于跨机位镜像对齐)
 _ref_cp = REFERENCE["reference"].get("contact_pose_img")
 REF_FACING = kc.detect_facing([{"img": _ref_cp}]) if _ref_cp else 1.0

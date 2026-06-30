@@ -33,8 +33,15 @@ METRIC_META = {
         "below": "击球点偏低 → 多在腰部以下, 注意降重心、早准备, 或选更高的击球点。",
         "above": "击球点偏高, 注意是否被高球顶到、影响上旋与稳定。",
     },
+    "rot_pre_frac": {
+        "label": "击球前身体旋转完成度", "unit": "", "direction": "higher",
+        "good": "击球前髋肩已转到位, 触球时把旋转能量交给手臂(德约式)。",
+        "below": "身体旋转偏晚——大部分髋肩旋转发生在击球之后(转过了球)。"
+                 "练: 引拍后先转髋再转肩、在触球前完成转体, 触球时身体已正对来球方向、随即把力甩给手臂。",
+        "above": "",
+    },
 }
-ORDER = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_height"]
+ORDER = ["seq_lead", "xfactor_magnitude", "contact_forward", "contact_height", "rot_pre_frac"]
 SEQ_LABELS = {"hip": "髋", "shoulder": "肩", "upper_arm": "上臂",
               "forearm": "前臂", "wrist": "手腕"}
 SEQ_ORDER = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]

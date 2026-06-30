@@ -210,9 +210,9 @@ def detect_swing_multiple(frames, fps: float, hand: str = "R",
     """从一段(可能含多次挥拍/杂内容)的视频里找出多个候选挥拍。
     返回 [{swing_start, contact, end, vf}, ...] 全段帧索引, 按时间排序。
 
-    判据: 持拍手腕"向挥击方向速度"的局部峰(每峰≈一次击球), 阈值(最强峰的45%)
-    + 最小间隔(1.2s)去抖(太近只留更强的); 每峰前 2s 内找手腕最靠后处=引拍起点,
-    峰后(到下一个峰之前)找最靠前处=随挥终点。纯姿态, 误差~±0.4s, 仅作候选由前端校正。"""
+    判据: 持拍手腕"向挥击方向速度"的局部峰定位每一次挥拍(阈值=最强峰45%, 最小间隔1.2s去抖);
+    击球帧取"速度峰之后手腕前伸最远处"(速度峰在挥拍中段、偏早, 前伸最远更接近真正触球);
+    峰前 2s 内手腕最靠后处=引拍起点, 击球后 0.5s=随挥终点。纯姿态, 误差~±0.4s, 仅作候选由前端校正。"""
     if facing is None:
         facing = detect_facing(frames)
     T = len(frames)
@@ -244,14 +244,15 @@ def detect_swing_multiple(frames, fps: float, hand: str = "R",
         peaks = [int(np.argmax(vf))]
     out = []
     for k, pk in enumerate(peaks[:max_n]):
-        contact = int(pk)
+        nxt = peaks[k + 1] if k + 1 < len(peaks) else T - 1
+        # 击球 ≈ 速度峰之后手腕"前伸最远"处 (速度峰在挥拍中段偏早; 前伸最远更接近真正触球)
+        fwd_hi = min(T - 1, min(nxt, pk + int(round(0.7 * fps))))
+        contact = (pk + int(np.argmax(fpos[pk:fwd_hi + 1]))) if fwd_hi > pk else int(pk)
         lo_w = max(0, contact - int(round(2.0 * fps)))
         swing_start = (lo_w + int(np.argmin(fpos[lo_w:contact + 1]))) if contact > lo_w else lo_w
-        nxt = peaks[k + 1] if k + 1 < len(peaks) else T - 1
-        hi_w = min(T - 1, min(nxt, contact + int(round(1.2 * fps))))
-        end = (contact + int(np.argmax(fpos[contact:hi_w + 1]))) if hi_w > contact else min(T - 1, contact + 1)
-        out.append({"swing_start": int(swing_start), "contact": contact,
-                    "end": int(end), "vf": float(vf[contact])})
+        end = min(T - 1, min(nxt, contact + int(round(0.5 * fps))))   # 随挥窗口
+        out.append({"swing_start": int(swing_start), "contact": int(contact),
+                    "end": int(end), "vf": float(vf[int(pk)])})
     return out
 
 
@@ -422,6 +423,12 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     cfwd, chgt = contact_point(world[contact], full["hand"])
     metrics["contact_forward"] = cfwd
     metrics["contact_height"] = chgt
+    # 击球前旋转完成度: 髋+肩角速度在[起点→击球]的积分占整个挥拍的比例。
+    # 抗噪——用积分(不取峰值帧)、不依赖精确击球帧; 高=击球前已转到位(德约式≈0.72),
+    # 低=身体旋转偏晚/转过击球点。比"5个速度峰散点"在低帧率/斜机位下稳得多。
+    hs = np.asarray(signals["raw"]["hip"], float) + np.asarray(signals["raw"]["shoulder"], float)
+    lc = int(np.clip(local_contact, 1, max(1, len(hs))))
+    metrics["rot_pre_frac"] = round(float(hs[:lc].sum()) / (float(hs.sum()) + 1e-9), 3)
     return {"signals": signals, "contact": int(contact),
             "contact_local": int(local_contact), "world": world,
             "facing": facing, "n_frames": int(world.shape[0]),
