@@ -90,29 +90,31 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
     fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.20)
     rows = [(1.0, "你" if cjk else "You", user_pt, du),
             (0.0, "德约" if cjk else "Djokovic", ref_pt, dr)]
+    # 各环节挤在 ~3 帧内(<0.10s)= 低于手机帧率分辨率, 精确先后是噪声 → 淡化用户5点、收成"一团",
+    # 不当判决, 把结论交给抗噪指标(击球前旋转完成度 / 发力链顺序 组级)。
+    uvals = [user_pt.get(k) for k, _zh, _c in _SEG_STYLE if user_pt.get(k) is not None]
+    user_bunched = len(uvals) >= 3 and (max(uvals) - min(uvals)) < 0.10
     for y, name, pt, load in rows:
         if not pt:
             continue
+        faded = (y == 1.0) and user_bunched
+        a = 0.25 if faded else 1.0
         xs = [(pt.get(k, 0.0) / load) for k, _zh, _c in _SEG_STYLE]
-        ax.plot(xs, [y] * len(xs), color="#cfd8d3", lw=2, zorder=1)   # 连线=发力链展开
+        ax.plot(xs, [y] * len(xs), color="#cfd8d3", lw=2, zorder=1, alpha=a)   # 连线=发力链展开
         for (k, zh, c), x in zip(_SEG_STYLE, xs):
-            ax.scatter([x], [y], s=150, color=c, zorder=3, edgecolors="white", linewidths=1.4)
+            ax.scatter([x], [y], s=150, color=c, zorder=3, edgecolors="white", linewidths=1.4, alpha=a)
+        if faded:                                        # 淡化的点上盖一团 + 把结论引到抗噪指标
+            cx = float(np.mean(xs))
+            ax.scatter([cx], [y], s=1400, color="#c0392b", alpha=0.10, zorder=2)
+            ax.text(cx, y - 0.34, "挤在一起·此帧率分不清精细先后 → 看下方『击球前旋转完成度』" if cjk
+                    else "bunched (low fps) — see diagnosis below",
+                    ha="center", va="top", fontsize=7.5, color="#c0392b", fontweight="bold")
         ax.text(xmin + 0.04, y, name, ha="left", va="center", fontsize=12, fontweight="bold")
     # 顶部色例 (替代逐点标签, 避免点挤时重叠)
     for i, (k, zh, c) in enumerate(_SEG_STYLE):
         x0 = -1.4 + i * 0.42
         ax.scatter([x0], [1.62], s=70, color=c, edgecolors="white", linewidths=1)
         ax.text(x0 + 0.05, 1.62, zh if cjk else _SEG_EN.get(k, k), va="center", fontsize=9, color="#333")
-    # 防误读: 用户各环节若挤在 ~3帧内(低于手机帧率分辨率), 精确先后是噪声 → 明确警示
-    uvals = [user_pt.get(k) for k, _zh, _c in _SEG_STYLE if user_pt.get(k) is not None]
-    if len(uvals) >= 3 and (max(uvals) - min(uvals)) < 0.10:
-        lo_x, hi_x = min(uvals) / du, max(uvals) / du
-        ax.axvspan(lo_x - 0.04, hi_x + 0.04, ymin=0.62, ymax=0.82,
-                   color="#c0392b", alpha=0.10, zorder=0)
-        ax.annotate("※ 挤在一起·精确先后是帧率噪声，别细究排名" if cjk
-                    else "bunched: order unreliable",
-                    ((lo_x + hi_x) / 2, 1.0), xytext=(0.62, 1.18),
-                    ha="center", fontsize=8.5, color="#c0392b", fontweight="bold")
     ax.axvline(0, ls="--", color="gray", lw=1)
     ax.text(xmin + 0.04, -0.62, "← 越靠左=越早发力；点拉得越开=发力链越依次展开(德约式)" if cjk
             else "← earlier; more spread = better chain", ha="left", fontsize=8.5, color="#888")
