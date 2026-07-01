@@ -132,10 +132,25 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
 
     scalar = {k: round(float(v), 3) for k, v in res["metrics"].items()
               if isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+    # 发力顺序可靠性守卫: 前挥段(引拍底→击球)帧数太少 → 相位轴被压扁、散点/时序不可信。
+    # 成因一: 视频从挥拍中途开始拍(没拍到向后引拍), 引拍底被取到片段开头 → 装载过短;
+    # 成因二: 帧率太低。两者都提示重拍, 避免误导用户(见 rot_pre_frac / 发力时间轴 的相位失真)。
+    fwd_frames = int(res["contact"]) - int(res.get("swing_start", 0))
+    seq_warn = ""
+    if fwd_frames < 6:
+        if int(res.get("swing_start", 0)) < 5:
+            seq_warn = ("⚠️ 你的视频可能从挥拍中途开始(没拍到向后引拍),发力顺序/相位分析可能不准。"
+                        "建议：从持拍准备-向后引拍开始,拍完整动作到收拍结束。")
+        else:
+            seq_warn = ("⚠️ 前挥段采样帧数太少,发力顺序的精细先后不可信。"
+                        "建议：用慢动作(120/240fps)拍摄以提升时序精度。")
+
     return {
         "ok": True, "hand": res["signals"]["hand"],
         "valid_ratio": round(res["valid_ratio"], 3),
         "contact": int(res["contact"]), "n_frames": int(res.get("n_frames") or 0),
+        "seq_warn": seq_warn,
         "metrics": scalar, "report": report,
         "kinetic_chart": chart, "sequence_chart": seq_chart, "seq_axis": shadow.SEQ_AXIS,
         "shadow_overlay": overlay,
