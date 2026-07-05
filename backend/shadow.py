@@ -247,14 +247,18 @@ def _nearest_img(frames_lm, fi, n):
     return pose_img
 
 
-def scrub_strip_at(video_path: str, frames_lm, frame_indices, width: int = 240) -> list:
-    """按给定帧索引列表生成 [真实帧+骨架] 缩略图序列(base64)。"""
+def scrub_strip_at(video_path: str, frames_lm, frame_indices, width: int = 240,
+                   video_offset: int = 0) -> list:
+    """按给定帧索引列表生成 [真实帧+骨架] 缩略图序列(base64)。
+    索引是 frames_lm 的局部索引; 当 frames_lm 只是视频的一个切片时(数据仓库
+    的 stroke JSON, meta.frame_range=[lo,hi]), 传 video_offset=lo 把视频寻址
+    平移到切片起点——app 里整段分析时两者重合, offset 保持默认 0。"""
     n = len(frames_lm)
     cap = cv2.VideoCapture(video_path)
     out = []
     for fi in frame_indices:
         fi = max(0, min(n - 1, int(fi)))
-        cap.set(cv2.CAP_PROP_POS_FRAMES, fi)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, fi + int(video_offset))
         ok, fr = cap.read()
         if not ok:
             out.append(None)
@@ -266,14 +270,16 @@ def scrub_strip_at(video_path: str, frames_lm, frame_indices, width: int = 240) 
 
 
 def scrub_strip(video_path: str, frames_lm, contact: int, loading_s: float,
-                fps: float, width: int = 240, bounds=None) -> list:
+                fps: float, width: int = 240, bounds=None,
+                video_offset: int = 0) -> list:
     """沿统一相位轴(SCRUB_PHASES, 线性)生成帧条。德约预生成静态条用它。
-    bounds=(lo,hi) 时把帧钳制在用户所选挥拍片段内, 不越界到片段外(随挥侧尤甚)。"""
+    bounds=(lo,hi) 时把帧钳制在用户所选挥拍片段内, 不越界到片段外(随挥侧尤甚)。
+    video_offset 见 scrub_strip_at: 切片数据传 frame_range[0]。"""
     idx = [int(round(contact + tau * loading_s * fps)) for tau in SCRUB_PHASES]
     if bounds:
         lo, hi = int(bounds[0]), int(bounds[1])
         idx = [max(lo, min(hi, i)) for i in idx]
-    return scrub_strip_at(video_path, frames_lm, idx, width)
+    return scrub_strip_at(video_path, frames_lm, idx, width, video_offset=video_offset)
 
 
 def grab_frame(video_path: str, frame_idx: int) -> np.ndarray | None:
