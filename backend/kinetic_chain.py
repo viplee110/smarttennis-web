@@ -376,6 +376,11 @@ def _crop_signals(signals: dict, lo: int, hi: int) -> dict:
     }
 
 
+# 装载段(前挥起点→击球)最少帧数: 低于此值时相位归一化分母失真, seq_lead 会放大成
+# 物理不可能的值(实测可达 ±150~373)。analyze 据此输出 metrics_valid, 建库端剔除。
+MIN_LOADING_FRAMES = 6
+
+
 def analyze(data: dict, hand: str = "auto", contact_override: int = None,
             seg: tuple = None, pre_s: float = 1.0, post_s: float = 0.7) -> dict:
     """端到端: landmarks JSON → 挥拍窗口内的信号 + contact + 指标。
@@ -406,7 +411,8 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
         contact = int(max(0, min(n - 1, contact_override))) if contact_override is not None else auto_contact
         bound_lo, bound_hi = 0, n
     # 装载时长 = 前挥起点→击球, 用于相位归一化对齐 (跨节奏可比)
-    loading_s = max((contact - swing_start) / fps, 1e-3)
+    loading_frames = int(contact - swing_start)
+    loading_s = max(loading_frames / fps, 1e-3)
     # 裁窗按 loading 成比例 (而非固定秒), 使不同节奏的人覆盖同一相位区间 ≈[-1.4, +0.6]
     pre_s = float(np.clip(1.4 * loading_s, 0.7, 3.0))
     post_s = float(np.clip(0.6 * loading_s, 0.4, 1.5))
@@ -419,10 +425,12 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     metrics["contact_t"] = float(contact / fps)
     # 发力链展开度归一化为相位 (节奏无关): 展开秒数 ÷ 装载时长
     metrics["seq_lead"] = round(metrics.pop("prox_lead_s", 0.0) / loading_s, 3)
-    # 击球点 (身体坐标系, 视角无关): 持拍手腕前伸量 / 高度
-    cfwd, chgt = contact_point(world[contact], full["hand"])
-    metrics["contact_forward"] = cfwd
-    metrics["contact_height"] = chgt
+    # 击球点 (身体坐标系, 视角无关): 持拍手腕前伸量 / 高度。
+    # world 单帧抖动可与球员间带间差同量级, 取击球帧 ±2 帧的中位数压噪
+    cwin = range(max(bound_lo, contact - 2), min(n, contact + 3))
+    cpts = [contact_point(world[i], full["hand"]) for i in cwin]
+    metrics["contact_forward"] = round(float(np.median([q[0] for q in cpts])), 3)
+    metrics["contact_height"] = round(float(np.median([q[1] for q in cpts])), 3)
     # 击球前旋转完成度: 髋+肩角速度在[起点→击球]的积分占整个挥拍的比例。
     # 抗噪——用积分(不取峰值帧)、不依赖精确击球帧; 高=击球前已转到位(德约式≈0.72),
     # 低=身体旋转偏晚/转过击球点。比"5个速度峰散点"在低帧率/斜机位下稳得多。
@@ -433,4 +441,6 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
             "contact_local": int(local_contact), "world": world,
             "facing": facing, "n_frames": int(world.shape[0]),
             "swing_start": int(swing_start), "loading_s": float(loading_s),
+            "loading_frames": loading_frames,
+            "metrics_valid": bool(loading_frames >= MIN_LOADING_FRAMES),
             "metrics": metrics, "valid_ratio": float(valid.mean())}
