@@ -84,7 +84,9 @@ uvicorn app:app --reload --port 8000
 # 服务器上
 git clone <你的仓库>
 cd smarttennis-web
-docker build -t smarttennis .
+# 国内 VPS 务必带镜像源参数(否则 apt/pip 走境外源, 实测能从几小时缩到几分钟):
+docker build -t smarttennis   --build-arg APT_MIRROR=mirrors.cloud.tencent.com   --build-arg PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple .
+# (境外机器直接 docker build -t smarttennis . 即可)
 docker run -d -p 80:7860 --restart unless-stopped smarttennis
 ```
 
