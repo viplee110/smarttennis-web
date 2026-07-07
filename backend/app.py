@@ -360,6 +360,19 @@ async def frame(token: str = Form(...), idx: int = Form(...)):
 
 
 # 前端静态资源 (放最后, 不覆盖 /api/*)
+# ── 教练盲评门户(独立页面, 主页无入口, 不影响普通用户) ──
+import coach as _coach
+app.include_router(_coach.router)
+
+
+@app.get("/coach")
+def coach_page():
+    p = os.path.join(FRONTEND, "coach.html")
+    if not os.path.isfile(p):
+        raise HTTPException(404, "页面缺失")
+    return FileResponse(p, media_type="text/html")
+
+
 if os.path.isdir(FRONTEND):
     @app.get("/")
     def index():

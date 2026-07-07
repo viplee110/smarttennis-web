@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>SmartTennis · 教练评测</title>
+<style>
+  :root{--green:#0b6b3a;--bg:#f5f7f6;--card:#fff;--ink:#1c2620;--muted:#6b7770;--line:#e3e8e5}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  header{background:var(--green);color:#fff;padding:16px;text-align:center}
+  header h1{margin:0;font-size:18px}
+  .wrap{max-width:560px;margin:0 auto;padding:14px 12px 50px}
+  .card{background:var(--card);border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.06);padding:16px;margin-bottom:14px}
+  .btn{display:block;width:100%;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;
+       background:var(--green);color:#fff;cursor:pointer;margin-top:10px}
+  .btn.sec{background:#eef2f0;color:var(--green)}
+  .btn:disabled{opacity:.45}
+  input[type=text],textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:15px}
+  textarea{resize:vertical;min-height:52px}
+  .muted{font-size:12.5px;color:var(--muted)}
+  video{width:100%;max-height:52vh;border-radius:10px;background:#000}
+  .prog{font-weight:700;color:var(--green);text-align:center;margin-bottom:8px}
+  .scorerow{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+  .scorerow button{flex:1;min-width:44px;padding:11px 0;border:1px solid var(--line);background:#fff;
+       border-radius:9px;font-size:15px;font-weight:700;color:var(--muted);cursor:pointer}
+  .scorerow button.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .gbrow{display:flex;gap:8px;margin:6px 0 10px}
+  .gbrow button{flex:1;padding:11px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;color:var(--muted)}
+  .gbrow button.g.on{background:#1f9d55;color:#fff;border-color:#1f9d55}
+  .gbrow button.b.on{background:#c0392b;color:#fff;border-color:#c0392b}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:center}
+  .editlink{color:var(--green);font-weight:700;cursor:pointer}
+  .done{color:var(--green);font-size:44px;text-align:center}
+</style>
+</head>
+<body>
+<header><h1>🎾 SmartTennis · 教练评测</h1></header>
+<div class="wrap">
+
+  <div class="card" id="loginCard">
+    <p style="margin-top:0">请输入您的<b>授权码</b>开始评测。评测约需 30~40 分钟,可中途退出、下次凭码续评。</p>
+    <input type="text" id="codeInput" placeholder="授权码" autocomplete="off">
+    <button class="btn" id="loginBtn">进入评测</button>
+    <p class="muted" id="loginMsg"></p>
+    <p class="muted">说明:您将逐条观看正手挥拍视频并打分。视频可反复播放。请凭您的专业判断独立评分——不同片段之间水平差异可能很大,也可能有相似的。</p>
+  </div>
+
+  <div class="card" id="rateCard" style="display:none">
+    <div class="prog" id="prog"></div>
+    <video id="vid" controls loop playsinline></video>
+    <div style="margin-top:12px;font-weight:700">这一拍的整体技术水平 (1=很差, 10=职业级)</div>
+    <div class="scorerow" id="scoreRow"></div>
+    <div style="font-weight:700">总体判断</div>
+    <div class="gbrow">
+      <button class="g" id="goodBtn">👍 动作合格/好</button>
+      <button class="b" id="badBtn">👎 有明显问题</button>
+    </div>
+    <textarea id="comment" placeholder="(可选) 一句话点评, 如: 引拍太晚 / 击球点漂亮"></textarea>
+    <button class="btn" id="confirmBtn" disabled>确认此条 →</button>
+    <p class="muted" style="text-align:center;margin-bottom:0"><span class="editlink" id="toSummary">查看已评汇总</span></p>
+  </div>
+
+  <div class="card" id="sumCard" style="display:none">
+    <h3 style="margin-top:0">评分汇总(提交前请过目)</h3>
+    <table id="sumTable"><thead><tr><th>#</th><th>分数</th><th>判断</th><th>改</th></tr></thead><tbody></tbody></table>
+    <button class="btn" id="submitBtn">确认无误, 最终提交</button>
+    <button class="btn sec" id="backBtn">返回继续评分</button>
+    <p class="muted">最终提交后不可再修改。</p>
+  </div>
+
+  <div class="card" id="doneCard" style="display:none">
+    <div class="done">✅</div>
+    <p style="text-align:center;font-weight:700">评测已提交, 非常感谢您的专业时间!</p>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+let CODE="", CLIPS=[], DONE=new Set(), idx=0, score=0, good=null, t0=0;
+
+function api(p, body){return fetch("/api/coach/"+p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail||r.status);return r.json();});}
+
+$("#loginBtn").onclick=async()=>{
+  try{
+    const r=await api("login",{code:$("#codeInput").value.trim()});
+    if(!r.ok){$("#loginMsg").textContent=r.reason;return;}
+    CODE=$("#codeInput").value.trim(); CLIPS=r.clips; DONE=new Set(r.done);
+    if(r.submitted){show("doneCard");return;}
+    idx=CLIPS.findIndex(c=>!DONE.has(c)); if(idx<0)idx=0;
+    show("rateCard"); load();
+  }catch(e){$("#loginMsg").textContent="进入失败: "+e.message;}
+};
+
+function show(id){["loginCard","rateCard","sumCard","doneCard"].forEach(c=>$("#"+c).style.display=c===id?"":"none");}
+
+// 1~10 分按钮
+const row=$("#scoreRow");
+for(let i=1;i<=10;i++){const b=document.createElement("button");b.textContent=i;
+  b.onclick=()=>{score=i;[...row.children].forEach(x=>x.classList.toggle("on",+x.textContent===i));check();};row.appendChild(b);}
+$("#goodBtn").onclick=()=>{good=true;$("#goodBtn").classList.add("on");$("#badBtn").classList.remove("on");check();};
+$("#badBtn").onclick=()=>{good=false;$("#badBtn").classList.add("on");$("#goodBtn").classList.remove("on");check();};
+function check(){$("#confirmBtn").disabled=!(score>0&&good!==null);}
+
+$("#vid").onerror=()=>{$("#confirmBtn").disabled=true;
+  alert("视频加载失败, 请检查网络后刷新; 若反复失败请把当前条号告知管理员");};
+function load(){
+  const id=CLIPS[idx];
+  $("#prog").textContent=`第 ${idx+1} / ${CLIPS.length} 条` + (DONE.has(id)?"(已评, 可修改)":"");
+  $("#vid").src=`/api/coach/clip/${id}?code=${encodeURIComponent(CODE)}`;
+  score=0;good=null;$("#comment").value="";
+  [...row.children].forEach(x=>x.classList.remove("on"));
+  $("#goodBtn").classList.remove("on");$("#badBtn").classList.remove("on");
+  check(); t0=Date.now();
+  $("#vid").oncanplay=()=>check();
+}
+
+$("#confirmBtn").onclick=async()=>{
+  const id=CLIPS[idx];
+  await api("rate",{code:CODE,clip_id:id,score,good,comment:$("#comment").value,
+                    seconds:(Date.now()-t0)/1000});
+  DONE.add(id);
+  const nxt=CLIPS.findIndex(c=>!DONE.has(c));
+  if(nxt<0){renderSummary();show("sumCard");}else{idx=nxt;load();}
+};
+
+$("#toSummary").onclick=()=>{renderSummary();show("sumCard");};
+$("#backBtn").onclick=()=>{const nxt=CLIPS.findIndex(c=>!DONE.has(c));idx=nxt<0?0:nxt;show("rateCard");load();};
+function renderSummary(){
+  const tb=$("#sumTable tbody");tb.innerHTML="";
+  CLIPS.forEach((c,i)=>{const d=DONE.has(c);
+    tb.insertAdjacentHTML("beforeend",`<tr><td>${i+1}</td><td>${d?"✓":"—"}</td><td>${d?"":"未评"}</td>`+
+      `<td><span class="editlink" data-i="${i}">${d?"改":"去评"}</span></td></tr>`);});
+  tb.querySelectorAll(".editlink").forEach(el=>el.onclick=()=>{idx=+el.dataset.i;show("rateCard");load();});
+  $("#submitBtn").disabled=CLIPS.some(c=>!DONE.has(c));
+}
+$("#submitBtn").onclick=async()=>{
+  try{await api("submit",{code:CODE});show("doneCard");}
+  catch(e){alert("提交失败: "+e.message);}
+};
+</script>
+</body>
+</html>
