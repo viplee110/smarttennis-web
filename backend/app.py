@@ -291,6 +291,9 @@ async def analyze(video: UploadFile = File(...), hand: str = Form("auto")):
         for s_ in swings:
             try:
                 r_ = kc.analyze(landmarks, hand=hand, seg=(s_["swing_start"], s_["end"]))
+                # 伪候选闸: 随挥/半截动作常被误当独立挥拍, 混进中位数会稀释真实挥拍
+                if not r_.get("metrics_valid", True) or abs(r_["metrics"]["seq_lead"]) > 0.75:
+                    continue
                 per.append((r_["metrics"], int(r_.get("loading_frames", 0))))
             except Exception:                        # noqa: BLE001
                 continue

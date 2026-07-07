@@ -49,7 +49,9 @@ SEQ_ORDER = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]
 # 时序类指标可靠所需的最少装载帧数(引拍底→击球)。30fps 常速业余挥拍通常只有 3~6 帧,
 # 量化噪声≈带宽级(正控实验: 同一挥拍两次测 seq_lead 差 0.2+), 低于此阈值锁定不评。
 TIMING_MIN_LOADING = 10
-TIMING_LOCKED = ("seq_lead", "xfactor_magnitude")   # xfactor 的取值窗口同样被短装载饿死
+# rot_pre 也锁: 短装载下窗口相位失真, 连德约本人都只测出 0.14(正控回归实测)——
+# 它反映的是拍摄条件而非技术, 30fps 常速下如实只评击球点两项。
+TIMING_LOCKED = ("seq_lead", "xfactor_magnitude", "rot_pre_frac")
 LOCK_TIP = ("此指标需要足够的时间分辨率——你的前挥只有几帧, 精细时序物理上测不出来。"
             "用手机慢动作模式(120/240fps)拍摄即可解锁。")
 
@@ -118,10 +120,8 @@ def diagnose(user_metrics: dict, reference: dict,
             })
             continue
         sub = _subscore(val, band, meta["direction"])
-        # rot_pre_frac 在短装载下相位失真, 降权但仍展示
-        w = 0.5 if (timing_locked and key == "rot_pre_frac") else 1.0
-        subs.append(sub * w)
-        weights.append(w)
+        subs.append(sub)
+        weights.append(1.0)
         status = _status(val, band)
         better_side = (meta["direction"] == "higher" and val > band["hi"]) or \
                       (meta["direction"] == "lower" and val < band["lo"])
