@@ -79,7 +79,8 @@ _SEG_EN = {"hip": "Hip", "shoulder": "Shoulder", "upper_arm": "U.arm",
 
 
 def render_sequence_timeline(user_pt: dict, ref_pt: dict,
-                             user_loading: float, ref_loading: float) -> str:
+                             user_loading: float, ref_loading: float,
+                             locked: bool = False) -> str:
     """极简发力时间轴: 每个部位一个点(发力时刻, 相位), 你(上)/德约(下)两行。
     一眼看'谁先谁后、和德约差多少' —— 比5条交叠曲线直观得多。"""
     cjk = _use_cjk_font()
@@ -96,6 +97,14 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
     user_bunched = len(uvals) >= 3 and (max(uvals) - min(uvals)) < 0.10
     for y, name, pt, load in rows:
         if not pt:
+            continue
+        # 置信锁: 装载帧数不足时用户时序是量化噪声, 不画点、只留解锁提示(与指标锁一致)
+        if locked and y == 1.0:
+            ax.text(0.0, y, "🔒 你的发力时序需慢动作视频解锁 (当前前挥帧数不足)" if cjk
+                    else "locked: needs slow-motion video", ha="center", va="center",
+                    fontsize=10, color="#7d8783", fontweight="bold")
+            ax.text(xmin + 0.04, y, "你" if cjk else "You",
+                    ha="left", va="center", fontsize=12, fontweight="bold")
             continue
         faded = (y == 1.0) and user_bunched
         a = 0.25 if faded else 1.0
@@ -116,8 +125,10 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
         ax.scatter([x0], [1.62], s=70, color=c, edgecolors="white", linewidths=1)
         ax.text(x0 + 0.05, 1.62, zh if cjk else _SEG_EN.get(k, k), va="center", fontsize=9, color="#333")
     ax.axvline(0, ls="--", color="gray", lw=1)
-    ax.text(xmin + 0.04, -0.62, "← 越靠左=越早发力；点拉得越开=发力链越依次展开(德约式)" if cjk
-            else "← earlier; more spread = better chain", ha="left", fontsize=8.5, color="#888")
+    # 判读要点: 职业各环节峰速间隔仅几十毫秒(质心统计下点本就会聚拢), 可靠信号是
+    # "点相对触球线的位置"——都在左侧=发力在触球前完成; 贴着/越过=发力偏晚。
+    ax.text(xmin + 0.04, -0.62, "点在触球线(0)左侧=发力在触球前完成(德约式)；贴着/越过=发力偏晚" if cjk
+            else "dots left of contact line = power before contact (pro-like)", ha="left", fontsize=8.5, color="#888")
     ax.set_xlim(xmin, SEQ_AXIS["xmax"]); ax.set_ylim(-0.8, 1.8)
     ax.set_yticks([]); ax.set_xlabel("挥拍相位 (0=击球)" if cjk else "swing phase (0=contact)", fontsize=9)
     for s in ("top", "right", "left"):

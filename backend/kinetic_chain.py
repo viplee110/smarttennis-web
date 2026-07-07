@@ -323,38 +323,54 @@ def contact_point(world_contact, hand: str = "R") -> tuple:
     return round(abs(float(wr @ fwd)) / scale, 3), round(float(wr @ up) / scale, 3)
 
 
-def compute_metrics(signals: dict, contact: int) -> dict:
-    """提炼诊断指标 (与 demo 报告下排三图一致)。"""
+def _peak_centroids(signals: dict, contact: int, pre_s: float, post_s: float) -> dict:
+    """五环节各自的"发力时刻"(相对击球, 秒): 窗口 [contact-pre_s, contact+post_s] 内
+    强度加权质心而非 argmax —— 低帧率+姿态抖动下远比单帧峰值稳定。"""
     tarr = signals["t"]
     fps = signals["fps"]
-
-    # 近端→远端时序: 只在 contact 前后的发力窗口内找峰 (避开准备/随挥的杂峰),
-    # 比较髋角速度峰 → 前臂角速度峰 的时间差 (s)。
-    w0 = max(0, contact - int(round(0.6 * fps)))
-    w1 = min(len(tarr), contact + int(round(0.15 * fps)) + 1)
+    w0 = max(0, contact - int(round(pre_s * fps)))
+    w1 = min(len(tarr), contact + int(round(post_s * fps)) + 1)
     seg = slice(w0, w1)
-    # 五个环节各自的"发力时刻"(相对击球, 秒): 用强度加权质心而非 argmax,
-    # 在低帧率+姿态抖动下远比单帧峰值稳定 (argmax 会让各环节挤成同一帧)。
-    order = ["hip", "shoulder", "upper_arm", "forearm", "wrist"]
     tt = np.asarray(tarr[seg]) - tarr[contact]
-    peak_times = {}
-    for k in order:
+    out = {}
+    for k in ["hip", "shoulder", "upper_arm", "forearm", "wrist"]:
         s = np.asarray(signals["raw"][k][seg], dtype=float)
         s = s / (s.max() + 1e-9)
         wts = np.clip(s - 0.5, 0.0, None) ** 2          # 只让"明显发力"的区间计入质心
         if wts.sum() < 1e-6:
             wts = s
-        peak_times[k] = round(float((tt * wts).sum() / (wts.sum() + 1e-9)), 3)
+        out[k] = round(float((tt * wts).sum() / (wts.sum() + 1e-9)), 3)
+    return out
+
+
+def compute_metrics(signals: dict, contact: int, loading_s: float = None) -> dict:
+    """提炼诊断指标 (与 demo 报告下排三图一致)。
+
+    peak_times 分两套窗口:
+    - seq_lead 沿用固定秒窗 [c-0.6s, c+0.15s](与既有参考带定义一致, 勿动);
+    - 展示用 peak_times 用相位比例窗 [c-1.2×loading, c+0.25×loading]——固定秒窗在
+      慢动作素材上只覆盖装载末段, 会把真实的髋→腕交错压成一个点(2026-07-07 复盘)。
+      loading_s 未提供时退回固定窗(旧行为)。"""
+    # 近端→远端时序: 只在 contact 前后的发力窗口内找峰 (避开准备/随挥的杂峰)
+    pt_fixed = _peak_centroids(signals, contact, 0.6, 0.15)
+    if loading_s and loading_s > 1e-3:
+        # 前沿按相位放大(慢动作装载长, 固定0.6s只看得到末段); 后沿固定+0.15s——
+        # 若后沿也按相位放大, 随挥的髋肩大转动会把质心拽到触球后、顺序倒挂(实测踩过)
+        peak_times = _peak_centroids(signals, contact,
+                                     max(1.2 * loading_s, 0.6), 0.15)
+    else:
+        peak_times = pt_fixed
     # 粗粒度近端→远端领先 (秒): 距端组(上臂/前臂/手腕)质心 − 近端组(髋/肩)质心。
     # 远端三环节峰差 <1帧、低于25-30fps分辨率不可靠, 故只取"组级"这个可分辨的信号。
-    prox = (peak_times["hip"] + peak_times["shoulder"]) / 2.0
-    dist = (peak_times["upper_arm"] + peak_times["forearm"] + peak_times["wrist"]) / 3.0
+    prox = (pt_fixed["hip"] + pt_fixed["shoulder"]) / 2.0
+    dist = (pt_fixed["upper_arm"] + pt_fixed["forearm"] + pt_fixed["wrist"]) / 3.0
     prox_lead_s = round(float(dist - prox), 3)          # 正 = 近端先发力(好)
 
     xf = signals["xfactor"]
     pre = xf[:contact + 1] if contact > 0 else xf
     xfactor_magnitude = float(np.max(np.abs(pre)))     # 击球前最大肩髋分离
 
+    tarr = signals["t"]
     return {
         "prox_lead_s": prox_lead_s,
         "xfactor_magnitude": xfactor_magnitude,
@@ -420,7 +436,7 @@ def analyze(data: dict, hand: str = "auto", contact_override: int = None,
     hi = min(bound_hi, contact + int(round(post_s * fps)) + 1)
     signals = _crop_signals(full, lo, hi)
     local_contact = contact - lo                        # 窗口内索引
-    metrics = compute_metrics(signals, local_contact)
+    metrics = compute_metrics(signals, local_contact, loading_s=loading_s)
     metrics["contact_frame"] = int(contact)             # 覆盖为全段帧
     metrics["contact_t"] = float(contact / fps)
     # 发力链展开度归一化为相位 (节奏无关): 展开秒数 ÷ 装载时长

@@ -109,7 +109,8 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
     # 极简发力时间轴 (主视觉, 比5曲线直观)
     seq_chart = shadow.render_sequence_timeline(
         res["metrics"].get("peak_times") or {}, ref.get("peak_times") or {},
-        res.get("loading_s", 1.0), (ref.get("ideal_curve") or {}).get("loading_s", 1.0))
+        res.get("loading_s", 1.0), (ref.get("ideal_curve") or {}).get("loading_s", 1.0),
+        locked=res.get("loading_frames", 99) < diagnose.TIMING_MIN_LOADING)
 
     contact_idx, contact_pose = _nearest_pose(landmarks["frames"], res["contact"])
     user_contact = None
