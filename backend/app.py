@@ -107,9 +107,10 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
         res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"),
         user_loading_s=res.get("loading_s", 0.0))
     # 极简发力时间轴 (主视觉, 比5曲线直观)
-    seq_chart = shadow.render_sequence_timeline(
-        res["metrics"].get("peak_times") or {}, ref.get("peak_times") or {},
-        res.get("loading_s", 1.0), (ref.get("ideal_curve") or {}).get("loading_s", 1.0),
+    # 发力传递双曲线(替代五点散点: 精细五环节先后在本分辨率下连职业都测不准, 已退役)
+    seq_chart = shadow.render_power_transfer(
+        res["signals"], res["metrics"]["contact_t"], res.get("loading_s", 1.0),
+        ref.get("ideal_curve"),
         locked=res.get("loading_frames", 99) < diagnose.TIMING_MIN_LOADING)
 
     contact_idx, contact_pose = _nearest_pose(landmarks["frames"], res["contact"])

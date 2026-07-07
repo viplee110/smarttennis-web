@@ -136,6 +136,50 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
     return _fig_to_b64(fig, tight=False)   # 固定边距 → 前端可精确定位竖线
 
 
+def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float,
+                          ideal_curve: dict | None = None, locked: bool = False) -> str:
+    """新手主视图"发力传递": 两条曲线——身体(髋+肩转速)与手臂(腕速)。
+    读法: 绿(身体)的峰应出现在击球线之前并回落, 红(手臂)紧随其后冲向击球点。
+    设计依据(2026-07-07 实验): 五环节精细先后在本管线分辨率下连职业都测不准(30fps短装载
+    命中率12%≈随机), 但"近端身体 vs 远端手臂"的组级传递在装载≥15帧时稳定显形(68-69%)。
+    坐标与 SEQ_AXIS 完全一致 → 前端滑杆竖线逻辑零改动。"""
+    cjk = _use_cjk_font()
+    du = float(user_loading_s) if user_loading_s and user_loading_s > 1e-3 else 1.0
+    t = (np.asarray(signals["t"]) - float(contact_t)) / du
+    body = np.asarray(signals["raw"]["hip"], float) + np.asarray(signals["raw"]["shoulder"], float)
+    body = body / (body.max() + 1e-9)
+    arm = np.asarray(signals["norm"]["wrist"], float)
+    xmin, xmax = SEQ_AXIS["xmin"], SEQ_AXIS["xmax"]
+    fig, ax = plt.subplots(figsize=(7.2, 2.9))
+    fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.20)
+    if ideal_curve:                                   # 德约参考(虚线, 同两组合成)
+        dj = float(ideal_curve.get("loading_s") or 0.0) or 1.0
+        ti = np.asarray(ideal_curve["t"]) / dj
+        k3 = np.ones(3) / 3.0                          # 示范曲线经降采样, 轻平滑去毛刺(仅展示)
+        rb = np.asarray(ideal_curve["hip"], float) + np.asarray(ideal_curve["shoulder"], float)
+        rb = np.convolve(rb / (rb.max() + 1e-9), k3, mode="same")
+        ra = np.convolve(np.asarray(ideal_curve["wrist"], float), k3, mode="same")
+        ax.plot(ti, rb, color="#2e7d32", lw=1.2, ls=":", alpha=0.55)
+        ax.plot(ti, ra, color="#d62728", lw=1.2, ls=":", alpha=0.55)
+    ax.plot(t, body, color="#2e7d32", lw=2.2, label=("身体(髋+肩)" if cjk else "Body"))
+    ax.plot(t, arm, color="#d62728", lw=2.2, label=("手臂(腕)" if cjk else "Arm"))
+    ax.axvline(0, ls="--", color="gray", lw=1)
+    ax.text(0.02, 1.04, "击球" if cjk else "contact", fontsize=8.5, color="gray")
+    ax.legend(loc="upper left", fontsize=9, frameon=False)
+    note = ("实线=你, 虚线=德约。绿峰在击球前出现并回落=身体先转好; 红峰随后冲向击球=力交给手臂"
+            if cjk else "solid=you, dotted=pro; green peak before contact, red follows")
+    if locked:
+        note = ("※ 前挥帧数有限, 曲线仅供定性参考(慢动作可解锁精确时序)。" if cjk
+                else "limited frames; qualitative only") 
+    ax.text(xmin + 0.04, -0.16, note, ha="left", fontsize=8.2,
+            color="#b97a1a" if locked else "#888", transform=ax.get_xaxis_transform())
+    ax.set_xlim(xmin, xmax); ax.set_ylim(-0.05, 1.18)
+    ax.set_yticks([]); ax.set_xlabel("挥拍相位 (0=击球)" if cjk else "swing phase (0=contact)", fontsize=9)
+    for sp_ in ("top", "right", "left"):
+        ax.spines[sp_].set_visible(False)
+    return _fig_to_b64(fig, tight=False)   # 固定边距 → 前端可精确定位竖线
+
+
 def render_kinetic_chart(signals: dict, contact_t: float,
                          ideal_curve: dict | None = None,
                          user_loading_s: float = 0.0) -> str:

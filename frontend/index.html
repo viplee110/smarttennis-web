@@ -185,9 +185,9 @@
       </div>
     </div>
     <div class="card" id="seqCard">
-      <h3 style="margin:0 0 4px">发力顺序：你 vs 德约</h3>
-      <div class="sub">每个部位发力最集中的时刻（相对击球，负=更早）。<b style="color:var(--green)">绿=你</b>，灰=德约。理想是髋最先、手腕最后依次发力。</div>
-      <div id="seqList"></div>
+      <h3 style="margin:0 0 4px">转体时机：发力是否在击球前完成</h3>
+      <div class="sub">身体(髋+肩)的转动有多少发生在<b>击球之前</b>。职业先把身体转到位、再把力交给手臂；转体大多发生在击球之后 = "转过了球"。</div>
+      <div id="rotBar" style="margin-top:10px"></div>
     </div>
     <div class="card imgcard">
       <details>
@@ -205,9 +205,9 @@
       </div>
       <input type="range" id="scrubSlider" class="scrubSlider" min="0" max="20" value="13">
       <div class="scrubPhase" id="scrubPhase"></div>
-      <div class="sub" style="margin-top:10px;text-align:center"><b>发力时间轴</b>：绿线=你此刻挥拍位置（随滑杆移动）</div>
+      <div class="sub" style="margin-top:10px;text-align:center"><b>发力传递曲线</b>：绿线=你此刻挥拍位置（随滑杆移动）</div>
       <div class="seqwrap"><img id="scrubMini" alt="发力时间轴"><div class="seqline" id="seqLine2"></div></div>
-      <div class="sub" style="margin-top:8px">每个部位一个点 = 它发力最集中的时刻。<b>越靠左=越早</b>；<b>点拉得越开 = 发力链越依次展开</b>（德约式）。你的点若挤在击球附近，说明发力太集中、偏"用手臂打"。<br><b style="color:#c0392b">注意</b>：各部位<b>挤在一起时别纠结精确先后</b>——手机帧率分不清 2 帧内的顺序，只看<b>你(挤) vs 德约(散)</b>的整体差异。慢动作(120/240fps)拍可让精确顺序变可信。</div>
+      <div class="sub" style="margin-top:8px"><b style="color:#2e7d32">绿=身体(髋+肩)</b>，<b style="color:#c0392b">红=手臂(腕)</b>；实线=你，虚线=德约。理想的发力传递：<b>绿峰在击球线之前出现并回落</b>（身体先转到位），<b>红峰紧随其后冲向击球点</b>（力交给手臂甩出）。若你的绿峰贴着或越过击球线 = 转体偏晚、"边打边转"。拖动滑杆，竖线扫过曲线，逐帧对照上方画面。</div>
     </div>
     <div class="card imgcard" id="overlayCard">
       <h3>影子对比（击球瞬间）</h3>
@@ -452,14 +452,25 @@ function paint(d){
     slr.oninput=upd; upd();
   } else {scrubCard.style.display="none"; if(seqLine2)seqLine2.style.opacity=0;}
 
-  const seq=d.report.sequencing||[], sc=$("#seqCard");
-  seqList.innerHTML="";
-  const sgn=v=>(v>0?'+':'')+v+'s';
-  seq.forEach(s=>seqList.insertAdjacentHTML("beforeend",
-    `<div class="seqitem"><div class="nm">${s.label}</div>`+
-    `<div class="tt">${sgn(s.t)}</div>`+
-    `<div class="rt">德约 ${s.ref_t!=null?sgn(s.ref_t):'—'}</div></div>`));
-  if(seq.length){sc.style.display="";
+  const rotIt=(d.report.items||[]).find(x=>x.key==="rot_pre_frac"), sc=$("#seqCard");
+  const rotBar=$("#rotBar"); rotBar.innerHTML="";
+  const mkbar=(name,frac,dim)=>{const pre=Math.round(frac*100), post=100-pre;
+    return `<div style="display:flex;align-items:center;gap:10px;margin-top:8px;opacity:${dim?0.9:1}">
+      <div style="width:44px;font-weight:700">${name}</div>
+      <div style="flex:1;display:flex;height:26px;border-radius:8px;overflow:hidden;font-size:12px;color:#fff;font-weight:700">
+        <div style="width:${pre}%;background:#2e7d32;display:flex;align-items:center;justify-content:center;min-width:34px">前 ${pre}%</div>
+        <div style="width:${post}%;background:#c9a13b;display:flex;align-items:center;justify-content:center;min-width:34px">后 ${post}%</div>
+      </div></div>`;};
+  if(rotIt){
+    if(rotIt.locked){
+      rotBar.innerHTML=mkbar("德约",rotIt.median,true)+
+        `<div class="sub" style="margin-top:10px">🔒 你的转体时机需<b>慢动作视频</b>解锁——当前帧率下该数值受采样影响不可靠。用手机慢动作模式(120/240fps)拍摄即可。</div>`;
+    }else{
+      rotBar.innerHTML=mkbar("你",rotIt.value,false)+mkbar("德约",rotIt.median,false);
+    }
+  }
+  const seq=[];
+  if(rotIt){sc.style.display="";
     let note=sc.querySelector(".seqnote");
     if(!note){note=document.createElement("div");note.className="seqnote";sc.appendChild(note);}
     // 不下"紊乱"硬判决: 25-30fps 下精细顺序不可靠, 只如实呈现, 由你自己对照
