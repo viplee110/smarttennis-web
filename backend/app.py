@@ -43,8 +43,11 @@ def _inject_rot_pre_band(ref: dict) -> None:
         med = round(pre / tot, 3)
     except Exception:                                # noqa: BLE001
         med = 0.6
-    ref.setdefault("metrics_band", {})["rot_pre_frac"] = {
-        "lo": round(med * 0.6, 3), "hi": 1.0, "median": med, "min": 0.0, "max": 1.0, "n": 1}
+    bands = ref.setdefault("metrics_band", {})
+    if "rot_pre_frac" not in bands:                  # 新参考带自带真分布, 仅旧带才用启发式
+        bands["rot_pre_frac"] = {
+            "lo": round(med * 0.6, 3), "hi": 1.0, "p10": round(med * 0.45, 3), "p90": 1.0,
+            "median": med, "min": 0.0, "max": 1.0, "n": 1}
 
 
 _inject_rot_pre_band(REFERENCE)
@@ -97,7 +100,8 @@ def _build_result(landmarks: dict, video_path: str, hand: str,
                   contact_override: int = None, seg: tuple = None) -> dict:
     """跑分析 + 渲染, 给定 contact(自动或滑杆指定) 与可选挥拍片段 seg。analyze/recompute 共用。"""
     res = kc.analyze(landmarks, hand=hand, contact_override=contact_override, seg=seg)
-    report = diagnose.diagnose(res["metrics"], REFERENCE)
+    report = diagnose.diagnose(res["metrics"], REFERENCE,
+                               loading_frames=res.get("loading_frames"))
     ref = REFERENCE["reference"]
     chart = shadow.render_kinetic_chart(
         res["signals"], res["metrics"]["contact_t"], ref.get("ideal_curve"),
@@ -279,6 +283,26 @@ async def analyze(video: UploadFile = File(...), hand: str = Form("auto")):
         default_seg = (best["swing_start"], best["end"])
 
     result = _build_result(landmarks, path, hand, seg=default_seg)
+    # 多挥拍聚合: 职业自己单拍指标也大幅波动(xfactor 9~22), 单拍下判决不公平——
+    # >=2 个候选挥拍时, 每拍各自分析取中位数重出报告(展示细节仍用最强一拍)。
+    if len(swings) >= 2:
+        import statistics
+        per = []
+        for s_ in swings:
+            try:
+                r_ = kc.analyze(landmarks, hand=hand, seg=(s_["swing_start"], s_["end"]))
+                per.append((r_["metrics"], int(r_.get("loading_frames", 0))))
+            except Exception:                        # noqa: BLE001
+                continue
+        if len(per) >= 2:
+            agg_m = {k: float(statistics.median([m[k] for m, _ in per]))
+                     for k in diagnose.ORDER}
+            agg_report = diagnose.diagnose(
+                agg_m, REFERENCE,
+                loading_frames=int(statistics.median([lf for _, lf in per])),
+                n_swings=len(per))
+            agg_report["sequencing"] = result["report"].get("sequencing", [])
+            result["report"] = agg_report
     c = result["contact"]
     win, thumbs = _contact_slider(path, fps, c, n, default_seg)
     cand_thumbs = _frame_thumbs(path, [s["contact"] for s in swings])

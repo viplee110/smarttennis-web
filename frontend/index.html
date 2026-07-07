@@ -478,7 +478,9 @@ function paint(d){
       <div class="metric">
         <div class="top">
           <span class="name">${it.label}</span>
-          <span class="badge ${it.ok?'ok':'no'}">${it.ok?'✓ 正常':'需改进'}</span>
+          ${it.locked
+            ? `<span class="badge" style="background:#eef1f0;color:#7d8783">🔒 慢动作解锁</span>`
+            : `<span class="badge ${it.ok?'ok':'no'}">${it.ok?'✓ 正常':'需改进'}</span>`}
         </div>
         <div class="val">你 ${it.value}${unit} <span style="color:var(--muted);font-weight:500">· 德约 ${it.band_lo}~${it.band_hi}${unit}</span></div>
         <div class="track">
