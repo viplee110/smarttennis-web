@@ -480,7 +480,10 @@ function paint(d){
           <span class="name">${it.label}</span>
           ${it.locked
             ? `<span class="badge" style="background:#eef1f0;color:#7d8783">🔒 慢动作解锁</span>`
-            : `<span class="badge ${it.ok?'ok':'no'}">${it.ok?'✓ 正常':'需改进'}</span>`}
+            : (()=>{const sc=Math.round(it.score);
+                const st={in_band:'理想区',acceptable:'合格',above:'偏高',below:'偏低'}[it.status]||'';
+                const c=sc>=80?['#e6f4ea','#1a7f43']:sc>=60?['#fdf3e3','#b97a1a']:['#fdeaea','#c0392b'];
+                return `<span class="badge" style="background:${c[0]};color:${c[1]}">${sc}分 · ${st}</span>`})()}
         </div>
         <div class="val">你 ${it.value}${unit} <span style="color:var(--muted);font-weight:500">· 德约 ${it.band_lo}~${it.band_hi}${unit}</span></div>
         <div class="track">
