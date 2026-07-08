@@ -150,8 +150,8 @@ def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float
     body = body / (body.max() + 1e-9)
     arm = np.asarray(signals["norm"]["wrist"], float)
     xmin, xmax = SEQ_AXIS["xmin"], SEQ_AXIS["xmax"]
-    fig, ax = plt.subplots(figsize=(7.2, 2.9))
-    fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.20)
+    fig, ax = plt.subplots(figsize=(7.2, 3.1))
+    fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.30)
     if ideal_curve:                                   # 德约参考(虚线, 同两组合成)
         dj = float(ideal_curve.get("loading_s") or 0.0) or 1.0
         ti = np.asarray(ideal_curve["t"]) / dj
@@ -166,15 +166,16 @@ def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float
     ax.axvline(0, ls="--", color="gray", lw=1)
     ax.text(0.02, 1.04, "击球" if cjk else "contact", fontsize=8.5, color="gray")
     ax.legend(loc="upper left", fontsize=9, frameon=False)
-    note = ("实线=你, 虚线=德约。绿峰在击球前出现并回落=身体先转好; 红峰随后冲向击球=力交给手臂"
-            if cjk else "solid=you, dotted=pro; green peak before contact, red follows")
+    note = ("实线=你, 虚线=德约。看身体(绿)转动主要落在击球线的哪一侧——转得越靠前越好"
+            if cjk else "solid=you, dotted=pro; when does body rotation happen vs contact")
     if locked:
         note = ("※ 前挥帧数有限, 曲线仅供定性参考(慢动作可解锁精确时序)。" if cjk
-                else "limited frames; qualitative only") 
-    ax.text(xmin + 0.04, -0.16, note, ha="left", fontsize=8.2,
-            color="#b97a1a" if locked else "#888", transform=ax.get_xaxis_transform())
+                else "limited frames; qualitative only")
     ax.set_xlim(xmin, xmax); ax.set_ylim(-0.05, 1.18)
     ax.set_yticks([]); ax.set_xlabel("挥拍相位 (0=击球)" if cjk else "swing phase (0=contact)", fontsize=9)
+    # 注释放到横轴标签下方(figure 坐标), 与黑色标签分层不重叠
+    fig.text(SEQ_AXIS["left"], 0.03, note, ha="left", fontsize=8.2,
+             color="#b97a1a" if locked else "#888")
     for sp_ in ("top", "right", "left"):
         ax.spines[sp_].set_visible(False)
     return _fig_to_b64(fig, tight=False)   # 固定边距 → 前端可精确定位竖线
