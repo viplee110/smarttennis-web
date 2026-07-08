@@ -156,19 +156,22 @@ def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float
     # 身体转动的前/后阴影(rot_pre 可视化): 击球线左侧=绿(击球前转好), 右侧=琥珀(边打边转)
     ax.fill_between(t, 0, body, where=(t <= 0), color="#2e7d32", alpha=0.22, zorder=0)
     ax.fill_between(t, 0, body, where=(t >= 0), color="#d9a441", alpha=0.22, zorder=0)
-    if ideal_curve:                                   # 德约身体转动(虚线参考)
+    if ideal_curve:                                   # 德约参考(虚线): 身体 + 手臂 都画, 与"你"对称
         dj = float(ideal_curve.get("loading_s") or 0.0) or 1.0
         ti = np.asarray(ideal_curve["t"]) / dj
         k3 = np.ones(3) / 3.0                          # 降采样示范曲线, 轻平滑去毛刺(仅展示)
         rb = np.asarray(ideal_curve["hip"], float) + np.asarray(ideal_curve["shoulder"], float)
         rb = np.convolve(rb / (rb.max() + 1e-9), k3, mode="same")
+        ra = np.convolve(np.asarray(ideal_curve["wrist"], float), k3, mode="same")
         ax.plot(ti, rb, color="#2e7d32", lw=1.4, ls=":", alpha=0.7,
                 label=("德约·身体" if cjk else "pro body"))
+        ax.plot(ti, ra, color="#d62728", lw=1.2, ls=":", alpha=0.6,
+                label=("德约·手臂" if cjk else "pro arm"))
     ax.plot(t, body, color="#2e7d32", lw=2.6, label=("你·身体(髋+肩)" if cjk else "you body"))
-    ax.plot(t, arm, color="#d62728", lw=1.5, alpha=0.75, label=("你·手臂(腕)" if cjk else "you arm"))
+    ax.plot(t, arm, color="#d62728", lw=1.6, alpha=0.8, label=("你·手臂(腕)" if cjk else "you arm"))
     ax.axvline(0, ls="--", color="gray", lw=1)
     ax.text(0.02, 1.04, "击球" if cjk else "contact", fontsize=8.5, color="gray")
-    ax.legend(loc="upper left", fontsize=8.5, frameon=False, ncol=1)
+    ax.legend(loc="upper left", fontsize=8, frameon=False, ncol=2)   # 2列: 身体/手臂 × 你/德约
     note = ("绿色阴影在击球线左侧越多 = 身体转动越早完成(好)；堆在右侧 = 边打边转、转体偏晚"
             if cjk else "more green area LEFT of contact = rotate earlier (good)")
     if locked:
