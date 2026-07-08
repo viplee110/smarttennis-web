@@ -19,20 +19,32 @@ MODEL_PATH = os.environ.get(
 MAX_FRAMES = int(os.environ.get("MAX_FRAMES", "450"))   # ~15s@30fps 上限, 防滥用
 
 
+def _make_landmarker():
+    return PoseLandmarker.create_from_options(PoseLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path=MODEL_PATH),
+        running_mode=RunningMode.VIDEO, num_poses=1,
+        min_pose_detection_confidence=0.5, min_tracking_confidence=0.5))
+
+
+def warmup() -> None:
+    """启动预热: 加载模型 + 跑一帧空白检测, 触发 MediaPipe 计算图初始化,
+    使第一个真实请求不必承担冷启动开销。"""
+    import numpy as np
+    lm = _make_landmarker()
+    try:
+        blank = np.zeros((64, 64, 3), dtype=np.uint8)
+        lm.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=blank), 0)
+    finally:
+        lm.close()
+
+
 def extract_from_video(video_path: str) -> dict:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise RuntimeError(f"无法打开视频: {video_path}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    options = PoseLandmarkerOptions(
-        base_options=BaseOptions(model_asset_path=MODEL_PATH),
-        running_mode=RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-    landmarker = PoseLandmarker.create_from_options(options)
+    landmarker = _make_landmarker()
 
     frames, idx = [], 0
     try:

@@ -33,6 +33,23 @@ with open(REFERENCE_PATH, encoding="utf-8") as fh:
     REFERENCE = json.load(fh)
 
 
+@app.on_event("startup")
+def _warmup() -> None:
+    """部署/重启后, 在第一个真实用户到来前先热好慢路径: matplotlib 字体缓存 +
+    MediaPipe 模型加载。否则冷容器上的第一次分析会明显变慢(手机端可能等到超时),
+    重试(已热)才正常——正是'重启撞上用户'那次报错的成因。启动失败不影响服务。"""
+    import sys
+    try:
+        shadow.render_sequence_timeline({}, {}, 1.0, 1.0)   # 触发字体缓存 + CJK 选择
+    except Exception as e:                                    # noqa: BLE001
+        print(f"[warmup] matplotlib 预热跳过: {e}", file=sys.stderr)
+    try:
+        pose.warmup()                                        # 预加载姿态模型
+    except Exception as e:                                    # noqa: BLE001
+        print(f"[warmup] 模型预热跳过: {e}", file=sys.stderr)
+    print("[warmup] 完成: matplotlib + 姿态模型已预热", file=sys.stderr)
+
+
 def _inject_rot_pre_band(ref: dict) -> None:
     """从已有 ideal_curve 现导德约'击球前旋转完成度'参考值, 注入 metrics_band(无需重建参考)。
     band 宽度为启发式(只有单条代表曲线、非208条IQR); 日后重建参考可换成真IQR。"""
