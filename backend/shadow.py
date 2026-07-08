@@ -138,10 +138,11 @@ def render_sequence_timeline(user_pt: dict, ref_pt: dict,
 
 def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float,
                           ideal_curve: dict | None = None, locked: bool = False) -> str:
-    """新手主视图"发力传递": 两条曲线——身体(髋+肩转速)与手臂(腕速)。
-    读法: 绿(身体)的峰应出现在击球线之前并回落, 红(手臂)紧随其后冲向击球点。
-    设计依据(2026-07-07 实验): 五环节精细先后在本管线分辨率下连职业都测不准(30fps短装载
-    命中率12%≈随机), 但"近端身体 vs 远端手臂"的组级传递在装载≥15帧时稳定显形(68-69%)。
+    """新手主视图"转体时机": 身体(髋+肩)转动速度曲线, 以击球线为界填充前/后阴影,
+    可视化 rot_pre_frac(击球前完成的转体占比)——本管线唯一测得准的时序信号。
+    读法: 绿色阴影在击球线左侧越多 = 转体越早完成(德约式); 堆在右侧 = 边打边转。
+    手臂(腕速)保留为细线陪衬"力最终交给手臂"的直觉, 不做峰值先后判读
+    (2026-07-08 实测: 身体vs手臂峰值滞后中位0, 合并曲线比不出精细先后, 故不呈现)。
     坐标与 SEQ_AXIS 完全一致 → 前端滑杆竖线逻辑零改动。"""
     cjk = _use_cjk_font()
     du = float(user_loading_s) if user_loading_s and user_loading_s > 1e-3 else 1.0
@@ -152,28 +153,29 @@ def render_power_transfer(signals: dict, contact_t: float, user_loading_s: float
     xmin, xmax = SEQ_AXIS["xmin"], SEQ_AXIS["xmax"]
     fig, ax = plt.subplots(figsize=(7.2, 3.1))
     fig.subplots_adjust(left=SEQ_AXIS["left"], right=SEQ_AXIS["right"], top=0.80, bottom=0.30)
-    if ideal_curve:                                   # 德约参考(虚线, 同两组合成)
+    # 身体转动的前/后阴影(rot_pre 可视化): 击球线左侧=绿(击球前转好), 右侧=琥珀(边打边转)
+    ax.fill_between(t, 0, body, where=(t <= 0), color="#2e7d32", alpha=0.22, zorder=0)
+    ax.fill_between(t, 0, body, where=(t >= 0), color="#d9a441", alpha=0.22, zorder=0)
+    if ideal_curve:                                   # 德约身体转动(虚线参考)
         dj = float(ideal_curve.get("loading_s") or 0.0) or 1.0
         ti = np.asarray(ideal_curve["t"]) / dj
-        k3 = np.ones(3) / 3.0                          # 示范曲线经降采样, 轻平滑去毛刺(仅展示)
+        k3 = np.ones(3) / 3.0                          # 降采样示范曲线, 轻平滑去毛刺(仅展示)
         rb = np.asarray(ideal_curve["hip"], float) + np.asarray(ideal_curve["shoulder"], float)
         rb = np.convolve(rb / (rb.max() + 1e-9), k3, mode="same")
-        ra = np.convolve(np.asarray(ideal_curve["wrist"], float), k3, mode="same")
-        ax.plot(ti, rb, color="#2e7d32", lw=1.2, ls=":", alpha=0.55)
-        ax.plot(ti, ra, color="#d62728", lw=1.2, ls=":", alpha=0.55)
-    ax.plot(t, body, color="#2e7d32", lw=2.2, label=("身体(髋+肩)" if cjk else "Body"))
-    ax.plot(t, arm, color="#d62728", lw=2.2, label=("手臂(腕)" if cjk else "Arm"))
+        ax.plot(ti, rb, color="#2e7d32", lw=1.4, ls=":", alpha=0.7,
+                label=("德约·身体" if cjk else "pro body"))
+    ax.plot(t, body, color="#2e7d32", lw=2.6, label=("你·身体(髋+肩)" if cjk else "you body"))
+    ax.plot(t, arm, color="#d62728", lw=1.5, alpha=0.75, label=("你·手臂(腕)" if cjk else "you arm"))
     ax.axvline(0, ls="--", color="gray", lw=1)
     ax.text(0.02, 1.04, "击球" if cjk else "contact", fontsize=8.5, color="gray")
-    ax.legend(loc="upper left", fontsize=9, frameon=False)
-    note = ("实线=你, 虚线=德约。看身体(绿)转动主要落在击球线的哪一侧——转得越靠前越好"
-            if cjk else "solid=you, dotted=pro; when does body rotation happen vs contact")
+    ax.legend(loc="upper left", fontsize=8.5, frameon=False, ncol=1)
+    note = ("绿色阴影在击球线左侧越多 = 身体转动越早完成(好)；堆在右侧 = 边打边转、转体偏晚"
+            if cjk else "more green area LEFT of contact = rotate earlier (good)")
     if locked:
-        note = ("※ 前挥帧数有限, 曲线仅供定性参考(慢动作可解锁精确时序)。" if cjk
-                else "limited frames; qualitative only")
+        note = ("※ 前挥帧数有限, 曲线仅供定性看趋势(慢动作可解锁精确数值)。" if cjk
+                else "limited frames; qualitative trend only")
     ax.set_xlim(xmin, xmax); ax.set_ylim(-0.05, 1.18)
     ax.set_yticks([]); ax.set_xlabel("挥拍相位 (0=击球)" if cjk else "swing phase (0=contact)", fontsize=9)
-    # 注释放到横轴标签下方(figure 坐标), 与黑色标签分层不重叠
     fig.text(SEQ_AXIS["left"], 0.03, note, ha="left", fontsize=8.2,
              color="#b97a1a" if locked else "#888")
     for sp_ in ("top", "right", "left"):
