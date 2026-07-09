@@ -329,7 +329,11 @@ function setupSegments(d){
       f.className="swingcard"+(s.i===act.i?" on":"");
       f.dataset.i=s.i;
       f.innerHTML=`<img src="${s.thumb||''}" alt="挥拍${s.i+1}"><div class="cap">挥拍 ${s.i+1}<br>${s.duration_s}s</div>`;
-      f.onclick=()=>{ segStart.value=s.swing_start; segEnd.value=s.end; segShow(); applySegment(); };
+      f.onclick=()=>{
+        // 立即高亮点击的这一拍(不等重算回来), 否则绿框会延迟到分析完成才移动
+        document.querySelectorAll("#swingList .swingcard").forEach(el=>el.classList.toggle("on",(+el.dataset.i)===s.i));
+        segStart.value=s.swing_start; segEnd.value=s.end; segShow(); applySegment();
+      };
       swingList.appendChild(f);
     });
     segHint.innerHTML=`检测到 <b>${sw.length}</b> 个挥拍。点选要分析的一个；或展开手动微调起止。`;
@@ -366,10 +370,17 @@ function highlightActiveSwing(contact){
     el.classList.toggle("on", !!act && (+el.dataset.i)===act.i);
   });
 }
+function baseSegHint(){
+  const n=((session&&session.swings)||[]).length;
+  return n>1 ? `检测到 <b>${n}</b> 个挥拍。点选要分析的一个；或展开手动微调起止。`
+             : `已自动定位挥拍区间。若起止不准，可展开手动调整起点/终点。`;
+}
 async function applySegment(){
-  if(!session||!session.token) return;
+  if(!session||!session.token){ segHint.innerHTML=`<span style="color:#c0392b">⚠️ 请先上传视频分析</span>`; return; }
   const a=+segStart.value, b=+segEnd.value;
   segStatus.textContent="重新分析该片段中…";
+  segHint.innerHTML="⏳ 正在重新分析所选挥拍…";     // 可见反馈(segStatus 在折叠区, 外面看不到)
+  segCard.style.opacity=".55"; segCard.style.pointerEvents="none";
   try{
     const fd=new FormData();
     fd.append("token",session.token); fd.append("contact",-1);
@@ -377,8 +388,12 @@ async function applySegment(){
     const r=await fetch("/api/recompute",{method:"POST",body:fd});
     const d=await r.json(); if(!r.ok||!d.ok) throw new Error(d.detail||"分析失败，请重试");
     refreshAfterRecompute(d);
-    segShow();
-  }catch(e){ segStatus.textContent="⚠️ "+e.message; }
+    segShow(); segHint.innerHTML=baseSegHint();
+  }catch(e){
+    segStatus.textContent="⚠️ "+e.message;
+    const expired=/过期|token|会话/.test(e.message);
+    segHint.innerHTML=`<span style="color:#c0392b">⚠️ ${expired?"会话已过期，请回到首页重新上传视频":e.message}</span>`;
+  }finally{ segCard.style.opacity=""; segCard.style.pointerEvents=""; }
 }
 segStart.oninput=()=>{ segClamp("start"); scheduleExact("start"); };
 segEnd.oninput=()=>{ segClamp("end"); scheduleExact("end"); };
