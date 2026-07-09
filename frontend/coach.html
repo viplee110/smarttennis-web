@@ -30,6 +30,13 @@
   .gbrow button{flex:1;padding:11px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;color:var(--muted)}
   .gbrow button.g.on{background:#1f9d55;color:#fff;border-color:#1f9d55}
   .gbrow button.b.on{background:#c0392b;color:#fff;border-color:#c0392b}
+  .qlabel{font-weight:700;margin-top:12px}
+  .qlabel span{font-weight:400;color:var(--muted);font-size:12px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 2px}
+  .chip{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:16px;
+        padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+  .chip.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .chip.primary{box-shadow:0 0 0 2px #f0b429}   /* 主要问题(第一个点的)描金边 */
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:center}
   .editlink{color:var(--green);font-weight:700;cursor:pointer}
@@ -58,6 +65,10 @@
       <button class="g" id="goodBtn">👍 动作合格/好</button>
       <button class="b" id="badBtn">👎 有明显问题</button>
     </div>
+    <div class="qlabel">问题出在哪？<span>(可多选 / 可跳过，第一个＝主要问题)</span></div>
+    <div class="chiprow" id="faultRow"></div>
+    <div class="qlabel">看得清吗？<span>(可选)</span></div>
+    <div class="chiprow" id="clarityRow"></div>
     <textarea id="comment" placeholder="(可选) 一句话点评, 如: 引拍太晚 / 击球点漂亮"></textarea>
     <button class="btn" id="confirmBtn" disabled>确认此条 →</button>
     <p class="muted" style="text-align:center;margin-bottom:0"><span class="editlink" id="toSummary">查看已评汇总</span></p>
@@ -102,7 +113,27 @@ for(let i=1;i<=10;i++){const b=document.createElement("button");b.textContent=i;
   b.onclick=()=>{score=i;[...row.children].forEach(x=>x.classList.toggle("on",+x.textContent===i));check();};row.appendChild(b);}
 $("#goodBtn").onclick=()=>{good=true;$("#goodBtn").classList.add("on");$("#badBtn").classList.remove("on");check();};
 $("#badBtn").onclick=()=>{good=false;$("#badBtn").classList.add("on");$("#goodBtn").classList.remove("on");check();};
-function check(){$("#confirmBtn").disabled=!(score>0&&good!==null);}
+function check(){$("#confirmBtn").disabled=!(score>0&&good!==null);}  // 芯片/清晰度可选, 不参与放行
+
+// 原因芯片(教练行话, code 与后端白名单一致); 有序=第一个是主要问题
+const FAULTS=[["contact_late","击球点太靠后"],["contact_early","击球点太靠前"],
+  ["contact_low","击球点太低"],["contact_high","击球点太高"],["arm_only","纯手臂打"],
+  ["no_load","引拍没拉开"],["rotate_late","身体转晚了"],["footwork","步法没到位"],
+  ["finish","收拍不完整"],["balance","重心/平衡"],["tempo","节奏/时机乱"],["other","其它"]];
+let faults=[], clarity=0;
+const faultRow=$("#faultRow");
+FAULTS.forEach(([code,label])=>{const b=document.createElement("div");
+  b.className="chip";b.textContent=label;b.dataset.code=code;
+  b.onclick=()=>{const i=faults.indexOf(code); i>=0?faults.splice(i,1):faults.push(code); renderFaults();};
+  faultRow.appendChild(b);});
+function renderFaults(){[...faultRow.children].forEach(el=>{
+  el.classList.toggle("on",faults.includes(el.dataset.code));
+  el.classList.toggle("primary",faults[0]===el.dataset.code);});}
+const clarityRow=$("#clarityRow");
+[[3,"清楚"],[2,"一般"],[1,"看不清"]].forEach(([v,label])=>{const b=document.createElement("div");
+  b.className="chip";b.textContent=label;b.dataset.v=v;
+  b.onclick=()=>{clarity=(clarity===v?0:v); renderClarity();};clarityRow.appendChild(b);});
+function renderClarity(){[...clarityRow.children].forEach(el=>el.classList.toggle("on",+el.dataset.v===clarity));}
 
 $("#vid").onerror=()=>{$("#confirmBtn").disabled=true;
   alert("视频加载失败, 请检查网络后刷新; 若反复失败请把当前条号告知管理员");};
@@ -111,6 +142,7 @@ function load(){
   $("#prog").textContent=`第 ${idx+1} / ${CLIPS.length} 条` + (DONE.has(id)?"(已评, 可修改)":"");
   $("#vid").src=`/api/coach/clip/${id}?code=${encodeURIComponent(CODE)}`;
   score=0;good=null;$("#comment").value="";
+  faults=[];clarity=0;renderFaults();renderClarity();
   [...row.children].forEach(x=>x.classList.remove("on"));
   $("#goodBtn").classList.remove("on");$("#badBtn").classList.remove("on");
   check(); t0=Date.now();
@@ -119,7 +151,7 @@ function load(){
 
 $("#confirmBtn").onclick=async()=>{
   const id=CLIPS[idx];
-  await api("rate",{code:CODE,clip_id:id,score,good,comment:$("#comment").value,
+  await api("rate",{code:CODE,clip_id:id,score,good,faults,clarity,comment:$("#comment").value,
                     seconds:(Date.now()-t0)/1000});
   DONE.add(id);
   const nxt=CLIPS.findIndex(c=>!DONE.has(c));

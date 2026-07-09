@@ -27,6 +27,15 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api/coach")
 _LOCK = threading.Lock()          # 评分文件读-改-写互斥(同码双开设备的竞态保护)
 
+# 原因芯片白名单(教练行话, 刻意不含我们的指标名——离线才映射回指标, 免得给教练发答案)。
+# 前 7 个映射到现有指标(逐指标验证效度); 后 5 个映射不到 = "缺口探针"(反推我们缺哪个指标)。
+FAULT_CODES = frozenset((
+    "contact_late", "contact_early", "contact_low", "contact_high",   # → contact_forward/height
+    "arm_only", "no_load", "rotate_late",                             # → seq_lead/xfactor/rot_pre
+    "footwork", "finish", "balance", "tempo", "other",               # → 无指标(缺口探针)
+))
+MAX_FAULTS = 6                    # 一拍最多记几个芯片(防手滑全选)
+
 # 容器内路径; 部署时用 docker run -v /home/ubuntu/coach_data:/app/coach_data 挂载宿主目录
 COACH_DIR = os.environ.get("COACH_DATA_DIR",
                            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -90,6 +99,8 @@ class RateReq(BaseModel):
     clip_id: str
     score: int           # 1~10 总体
     good: bool           # 好/差 二选一
+    faults: list[str] = []   # 原因芯片 code(有序, 第一个=主要问题); 落盘按白名单过滤
+    clarity: int = 0     # 拍摄清晰度 0未答/1看不清/2一般/3清楚(剔除拍摄质量混淆)
     comment: str = ""
     seconds: float = 0.0  # 该条停留时长(防敷衍核查用)
 
@@ -139,8 +150,14 @@ def rate(req: RateReq):
         doc = _load_rating(req.code)
         if doc.get("submitted"):
             raise HTTPException(409, "已最终提交, 不可修改")
+        # 芯片按白名单过滤+去重保序(第一个=主要问题), 截断到 MAX_FAULTS; 未知 code 丢弃
+        seen = set()
+        faults = [f for f in (req.faults or [])
+                  if f in FAULT_CODES and not (f in seen or seen.add(f))][:MAX_FAULTS]
+        clarity = int(req.clarity) if req.clarity in (0, 1, 2, 3) else 0
         doc["ratings"][req.clip_id] = {
             "score": int(req.score), "good": bool(req.good),
+            "faults": faults, "clarity": clarity,
             "comment": (req.comment or "")[:500],
             "seconds": round(float(req.seconds), 1),
             "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
